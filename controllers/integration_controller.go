@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	hasv1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
+	"github.com/redhat-appstudio/integration-service/api/v1alpha1"
 	"github.com/redhat-appstudio/integration-service/tekton"
 	releasev1alpha1 "github.com/redhat-appstudio/release-service/api/v1alpha1"
 	"github.com/sirupsen/logrus"
@@ -93,11 +94,28 @@ func (r *IntegrationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		err = r.Client.Create(ctx, applicationSnapshot)
 		if err != nil {
 			log.Error(err, "Failed to create Application Snapshot for ",
-				"Application.Name ", application.Name, "Application.Namespace ", application.Namespace)
+				"Application.Name ", application.Name, " Application.Namespace ", application.Namespace)
 			return ctrl.Result{}, nil
 		}
 		log.Info("Created ApplicationSnapshot for Application ", application.Name,
 			" with Images: ", applicationSnapshot.Spec.Images)
+
+		integrationScenario, err := CreateIntegrationScenario(applicationSnapshot)
+		err = r.Client.Create(ctx, integrationScenario)
+		if err != nil {
+			log.Error(err, "Failed to create IntegrationScenario for ",
+				"ApplicationSnapshot.Name ", applicationSnapshot.Name, " ApplicationSnapshot.Namespace ", applicationSnapshot.Namespace)
+			return ctrl.Result{}, nil
+		}
+		pipelineRun := tekton.CreatePreliminaryPipelineRun(applicationSnapshot, integrationScenario)
+		err = r.Client.Create(ctx, pipelineRun)
+		if err != nil {
+			log.Error(err, "Failed to create Preliminary PipelineRun for ",
+				"ApplicationSnapshot.Name ", applicationSnapshot.Name, " ApplicationSnapshot.Namespace ", applicationSnapshot.Namespace)
+			return ctrl.Result{}, nil
+		}
+		log.Info("Created IntegrationScenario ", integrationScenario.Name, " for Application ", application.Name,
+			" and triggered the Preliminary Tekton PipelineRun ", pipelineRun.Name, " using bundle ", pipelineRun.Spec.PipelineRef.Bundle)
 	}
 
 	return ctrl.Result{}, nil
@@ -175,6 +193,21 @@ func CreateApplicationSnapshot(application *hasv1alpha1.Application, application
 		},
 		Spec: releasev1alpha1.ApplicationSnapshotSpec{
 			Images: images,
+		},
+	}, nil
+}
+
+// CreateIntegrationScenario creates an IntegrationScenario from a given ApplicationSnapshot.
+func CreateIntegrationScenario(applicationSnapshot *releasev1alpha1.ApplicationSnapshot) (*v1alpha1.IntegrationScenario, error) {
+	return &v1alpha1.IntegrationScenario{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: applicationSnapshot.Name + "-",
+			Namespace:    applicationSnapshot.Namespace,
+		},
+		// TODO: Will require actual logic to fetch the user-defined Tekton pipeline information
+		Spec: v1alpha1.IntegrationScenarioSpec{
+			Pipeline: "demo-pipeline",
+			Bundle:   "quay.io/kpavic/test-bundle:pipeline",
 		},
 	}, nil
 }
