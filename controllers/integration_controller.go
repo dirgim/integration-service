@@ -21,10 +21,12 @@ import (
 	"fmt"
 	hasv1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
 	"github.com/redhat-appstudio/integration-service/tekton"
+	releasev1alpha1 "github.com/redhat-appstudio/release-service/api/v1alpha1"
 	"github.com/sirupsen/logrus"
 	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -77,8 +79,25 @@ func (r *IntegrationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
+	applicationComponents, err := r.getApplicationComponents(ctx, application)
+	if err != nil {
+		log.Error(err, "Failed to get Application Components for ",
+			"Application.Name ", application.Name, "Application.Namespace ", application.Namespace)
+		return ctrl.Result{}, nil
+	}
+
 	if tekton.IsBuildPipelineRun(pipelineRun) {
-		log.Info("PipelineRun resource for the build pipeline found! Component ", component.Name, " Application ", application.Name)
+		log.Info("PipelineRun resource for the build pipeline found! Component ", component.Name,
+			" Application ", application.Name)
+		applicationSnapshot, err := CreateApplicationSnapshot(application, applicationComponents)
+		err = r.Client.Create(ctx, applicationSnapshot)
+		if err != nil {
+			log.Error(err, "Failed to create Application Snapshot for ",
+				"Application.Name ", application.Name, "Application.Namespace ", application.Namespace)
+			return ctrl.Result{}, nil
+		}
+		log.Info("Created ApplicationSnapshot for Application ", application.Name,
+			" with Images: ", applicationSnapshot.Spec.Images)
 	}
 
 	return ctrl.Result{}, nil
@@ -118,6 +137,46 @@ func (r *IntegrationReconciler) getApplication(ctx context.Context, component *h
 	}
 
 	return application, nil
+}
+
+// doesn't have any Components or this is not found in the cluster, an error will be returned.
+func (r *IntegrationReconciler) getApplicationComponents(ctx context.Context, application *hasv1alpha1.Application) ([]hasv1alpha1.Component, error) {
+
+	applicationComponents := []hasv1alpha1.Component{}
+	allComponents := &hasv1alpha1.ComponentList{}
+	err := r.List(ctx, allComponents)
+	for _, component := range allComponents.Items {
+		if component.Spec.Application == application.Name {
+			applicationComponents = append(applicationComponents, component)
+		}
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return applicationComponents, nil
+}
+
+func CreateApplicationSnapshot(application *hasv1alpha1.Application, applicationComponents []hasv1alpha1.Component) (*releasev1alpha1.ApplicationSnapshot, error) {
+	images := []releasev1alpha1.Image{}
+
+	for _, applicationComponent := range applicationComponents {
+		image := releasev1alpha1.Image{
+			Component: applicationComponent.Name,
+			PullSpec:  applicationComponent.Status.ContainerImage,
+		}
+		images = append(images, image)
+	}
+	return &releasev1alpha1.ApplicationSnapshot{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: application.Name + "-",
+			Namespace:    application.Namespace,
+		},
+		Spec: releasev1alpha1.ApplicationSnapshotSpec{
+			Images: images,
+		},
+	}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
