@@ -22,12 +22,16 @@ import (
 
 // IntegrationScenarioSpec defines the desired state of IntegrationScenario
 type IntegrationScenarioSpec struct {
+	// Application that's associated with the IntegrationScenario
+	Application string `json:"application"`
 	// Release Tekton Pipeline to execute
 	Pipeline string `json:"pipeline"`
 	// Tekton Bundle where to find the pipeline
 	Bundle string `json:"bundle,omitempty"`
 	// Params to pass to the pipeline
 	Params []PipelineParameter `json:"params,omitempty"`
+	// Environments that will be utilized by the test pipeline
+	Environments []TestEnvironment `json:"environments,omitempty"`
 }
 
 // IntegrationScenarioStatus defines the observed state of IntegrationScenario
@@ -38,6 +42,13 @@ type IntegrationScenarioStatus struct {
 type PipelineParameter struct {
 	Name  string   `json:"name"`
 	Value []string `json:"value"`
+}
+
+// TestEnvironment contains the name and values of a Test environment
+type TestEnvironment struct {
+	Name     string   `json:"name"`
+	TestName string   `json:"testName"`
+	Value    []string `json:"value"`
 }
 
 //+kubebuilder:object:root=true

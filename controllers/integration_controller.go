@@ -61,61 +61,60 @@ func (r *IntegrationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			return ctrl.Result{}, nil
 		}
 
-		log.Error(err, "Failed to get PipelineRun")
+		log.Error(err, " Failed to get PipelineRun")
 
 		return ctrl.Result{}, err
 	}
 
-	component, err := r.getComponent(ctx, pipelineRun)
-	if err != nil {
-		log.Error(err, "Failed to get Component for ",
-			"PipelineRun.Name ", pipelineRun.Name, "PipelineRun.Namespace ", pipelineRun.Namespace)
-		return ctrl.Result{}, nil
-	}
-
-	application, err := r.getApplication(ctx, component)
-	if err != nil {
-		log.Error(err, "Failed to get Application for ",
-			"Component.Name ", component.Name, "Component.Namespace ", component.Namespace)
-		return ctrl.Result{}, nil
-	}
-
-	applicationComponents, err := r.getApplicationComponents(ctx, application)
-	if err != nil {
-		log.Error(err, "Failed to get Application Components for ",
-			"Application.Name ", application.Name, "Application.Namespace ", application.Namespace)
-		return ctrl.Result{}, nil
-	}
-
 	if tekton.IsBuildPipelineRun(pipelineRun) {
+		component, err := r.getComponent(ctx, pipelineRun)
+		if err != nil {
+			log.Error(err, " Failed to get Component for ",
+				"PipelineRun.Name ", pipelineRun.Name, "PipelineRun.Namespace ", pipelineRun.Namespace)
+			return ctrl.Result{}, nil
+		}
+
+		application, err := r.getApplication(ctx, component)
+		if err != nil {
+			log.Error(err, " Failed to get Application for ",
+				"Component.Name ", component.Name, "Component.Namespace ", component.Namespace)
+			return ctrl.Result{}, nil
+		}
+
+		applicationComponents, err := r.getApplicationComponents(ctx, application)
+		if err != nil {
+			log.Error(err, " Failed to get Application Components for ",
+				"Application.Name ", application.Name, "Application.Namespace ", application.Namespace)
+			return ctrl.Result{}, nil
+		}
+
 		log.Info("PipelineRun resource for the build pipeline found! Component ", component.Name,
 			" Application ", application.Name)
-		applicationSnapshot, err := CreateApplicationSnapshot(application, applicationComponents)
+		applicationSnapshot, err := CreateApplicationSnapshot(component, applicationComponents, pipelineRun)
 		err = r.Client.Create(ctx, applicationSnapshot)
 		if err != nil {
-			log.Error(err, "Failed to create Application Snapshot for ",
+			log.Error(err, " Failed to create Application Snapshot for ",
 				"Application.Name ", application.Name, " Application.Namespace ", application.Namespace)
 			return ctrl.Result{}, nil
 		}
 		log.Info("Created ApplicationSnapshot for Application ", application.Name,
 			" with Images: ", applicationSnapshot.Spec.Images)
 
-		integrationScenario, err := CreateIntegrationScenario(applicationSnapshot)
-		err = r.Client.Create(ctx, integrationScenario)
+		integrationScenario, err := r.getIntegrationScenario(ctx, application)
 		if err != nil {
-			log.Error(err, "Failed to create IntegrationScenario for ",
+			log.Error(err, " Failed to get IntegrationScenario for ",
 				"ApplicationSnapshot.Name ", applicationSnapshot.Name, " ApplicationSnapshot.Namespace ", applicationSnapshot.Namespace)
 			return ctrl.Result{}, nil
 		}
 		pipelineRun := tekton.CreatePreliminaryPipelineRun(applicationSnapshot, integrationScenario)
 		err = r.Client.Create(ctx, pipelineRun)
 		if err != nil {
-			log.Error(err, "Failed to create Preliminary PipelineRun for ",
+			log.Error(err, " Failed to create Preliminary PipelineRun for ",
 				"ApplicationSnapshot.Name ", applicationSnapshot.Name, " ApplicationSnapshot.Namespace ", applicationSnapshot.Namespace)
 			return ctrl.Result{}, nil
 		}
-		log.Info("Created IntegrationScenario ", integrationScenario.Name, " for Application ", application.Name,
-			" and triggered the Preliminary Tekton PipelineRun ", pipelineRun.Name, " using bundle ", pipelineRun.Spec.PipelineRef.Bundle)
+		log.Info("Using IntegrationScenario ", integrationScenario.Name, " for Application ", application.Name,
+			" to trigger the Preliminary Tekton PipelineRun ", pipelineRun.Name, " using bundle ", pipelineRun.Spec.PipelineRef.Bundle)
 	}
 
 	return ctrl.Result{}, nil
@@ -157,9 +156,9 @@ func (r *IntegrationReconciler) getApplication(ctx context.Context, component *h
 	return application, nil
 }
 
+// getApplicationComponents loads from the cluster the Components associated with the given Application. If the Application
 // doesn't have any Components or this is not found in the cluster, an error will be returned.
 func (r *IntegrationReconciler) getApplicationComponents(ctx context.Context, application *hasv1alpha1.Application) ([]hasv1alpha1.Component, error) {
-
 	applicationComponents := []hasv1alpha1.Component{}
 	allComponents := &hasv1alpha1.ComponentList{}
 	err := r.List(ctx, allComponents)
@@ -176,38 +175,46 @@ func (r *IntegrationReconciler) getApplicationComponents(ctx context.Context, ap
 	return applicationComponents, nil
 }
 
-func CreateApplicationSnapshot(application *hasv1alpha1.Application, applicationComponents []hasv1alpha1.Component) (*releasev1alpha1.ApplicationSnapshot, error) {
+// getIntegrationScenario get an IntegrationScenario for a given ApplicationSnapshot.
+func (r *IntegrationReconciler) getIntegrationScenario(ctx context.Context, application *hasv1alpha1.Application) (*v1alpha1.IntegrationScenario, error) {
+	integrationScenario := &v1alpha1.IntegrationScenario{}
+	err := r.Get(ctx, types.NamespacedName{
+		Namespace: application.Namespace,
+		Name:      application.Name,
+	}, integrationScenario)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return integrationScenario, nil
+}
+
+func CreateApplicationSnapshot(component *hasv1alpha1.Component, applicationComponents []hasv1alpha1.Component, pipelineRun *tektonv1beta1.PipelineRun) (*releasev1alpha1.ApplicationSnapshot, error) {
 	images := []releasev1alpha1.Image{}
 
 	for _, applicationComponent := range applicationComponents {
+		pullSpec := applicationComponent.Status.ContainerImage
+		if applicationComponent.Name == component.Name {
+			var err error
+			pullSpec, err = tekton.GetOutputImage(pipelineRun)
+			if err != nil {
+				return nil, err
+			}
+		}
 		image := releasev1alpha1.Image{
 			Component: applicationComponent.Name,
-			PullSpec:  applicationComponent.Status.ContainerImage,
+			PullSpec:  pullSpec,
 		}
 		images = append(images, image)
 	}
 	return &releasev1alpha1.ApplicationSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: application.Name + "-",
-			Namespace:    application.Namespace,
+			GenerateName: component.Spec.Application + "-",
+			Namespace:    component.Namespace,
 		},
 		Spec: releasev1alpha1.ApplicationSnapshotSpec{
 			Images: images,
-		},
-	}, nil
-}
-
-// CreateIntegrationScenario creates an IntegrationScenario from a given ApplicationSnapshot.
-func CreateIntegrationScenario(applicationSnapshot *releasev1alpha1.ApplicationSnapshot) (*v1alpha1.IntegrationScenario, error) {
-	return &v1alpha1.IntegrationScenario{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: applicationSnapshot.Name + "-",
-			Namespace:    applicationSnapshot.Namespace,
-		},
-		// TODO: Will require actual logic to fetch the user-defined Tekton pipeline information
-		Spec: v1alpha1.IntegrationScenarioSpec{
-			Pipeline: "demo-pipeline",
-			Bundle:   "quay.io/kpavic/test-bundle:pipeline",
 		},
 	}, nil
 }
