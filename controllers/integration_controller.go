@@ -62,12 +62,11 @@ func (r *IntegrationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 
 		log.Error(err, " Failed to get PipelineRun")
-
 		return ctrl.Result{}, err
 	}
 
 	if tekton.IsBuildPipelineRun(pipelineRun) {
-		component, err := r.getComponent(ctx, pipelineRun)
+		component, err := r.getComponentFromBuildPipelineRun(ctx, pipelineRun)
 		if err != nil {
 			log.Error(err, " Failed to get Component for ",
 				"PipelineRun.Name ", pipelineRun.Name, "PipelineRun.Namespace ", pipelineRun.Namespace)
@@ -103,26 +102,36 @@ func (r *IntegrationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		integrationScenario, err := r.getIntegrationScenario(ctx, application)
 		if err != nil {
 			log.Error(err, " Failed to get IntegrationScenario for ",
-				"ApplicationSnapshot.Name ", applicationSnapshot.Name, " ApplicationSnapshot.Namespace ", applicationSnapshot.Namespace)
+				"ApplicationSnapshot.Name ", applicationSnapshot.Name, " ApplicationSnapshot.Namespace ",
+				applicationSnapshot.Namespace)
 			return ctrl.Result{}, nil
 		}
-		pipelineRun := tekton.CreatePreliminaryPipelineRun(applicationSnapshot, integrationScenario)
+		pipelineRun := tekton.CreatePreliminaryPipelineRun(component, application, applicationSnapshot, integrationScenario)
 		err = r.Client.Create(ctx, pipelineRun)
 		if err != nil {
 			log.Error(err, " Failed to create Preliminary PipelineRun for ",
-				"ApplicationSnapshot.Name ", applicationSnapshot.Name, " ApplicationSnapshot.Namespace ", applicationSnapshot.Namespace)
+				"ApplicationSnapshot.Name ", applicationSnapshot.Name, " ApplicationSnapshot.Namespace ",
+				applicationSnapshot.Namespace)
 			return ctrl.Result{}, nil
 		}
-		log.Info("Using IntegrationScenario ", integrationScenario.Name, " for Application ", application.Name,
-			" to trigger the Preliminary Tekton PipelineRun ", pipelineRun.Name, " using bundle ", pipelineRun.Spec.PipelineRef.Bundle)
+		log.Info("Created the Preliminary Tekton PipelineRun ", pipelineRun.Name, " using bundle ",
+			pipelineRun.Spec.PipelineRef.Bundle, " with IntegrationScenario ", integrationScenario.Name, " for Application ", application.Name)
+	} else if tekton.IsPrelimPipelineRun(pipelineRun) {
+		applicationSnapshot, err := r.getApplicationSnapshotFromTestPipelineRun(ctx, pipelineRun)
+		if err != nil {
+			log.Error(err, " Failed to get ApplicationSnapshot for ",
+				"PipelineRun.Name ", pipelineRun.Name, "PipelineRun.Namespace ", pipelineRun.Namespace)
+			return ctrl.Result{}, nil
+		}
+		log.Info("The Test PipelineRun ", pipelineRun.Name, " for the ApplicationSnapshot ", applicationSnapshot.Name, " Succeeded! ")
 	}
 
 	return ctrl.Result{}, nil
 }
 
-// getComponent loads from the cluster the Component referenced in the given PipelineRun. If the PipelineRun doesn't
-// specify a Component or this is not found in the cluster, an error will be returned.
-func (r *IntegrationReconciler) getComponent(ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) (*hasv1alpha1.Component, error) {
+// getComponentFromBuildPipelineRun loads from the cluster the Component referenced in the given build PipelineRun.
+// If the PipelineRun doesn't specify a Component or this is not found in the cluster, an error will be returned.
+func (r *IntegrationReconciler) getComponentFromBuildPipelineRun(ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) (*hasv1alpha1.Component, error) {
 	if componentName, found := pipelineRun.Labels["build.appstudio.openshift.io/component"]; found {
 		component := &hasv1alpha1.Component{}
 		err := r.Get(ctx, types.NamespacedName{
@@ -135,6 +144,26 @@ func (r *IntegrationReconciler) getComponent(ctx context.Context, pipelineRun *t
 		}
 
 		return component, nil
+	}
+
+	return nil, fmt.Errorf("The pipeline has no component associated with it")
+}
+
+// getApplicationSnapshotFromTestPipelineRun loads from the cluster the Component referenced in the given PipelineRun. If the PipelineRun doesn't
+// specify a Component or this is not found in the cluster, an error will be returned.
+func (r *IntegrationReconciler) getApplicationSnapshotFromTestPipelineRun(ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) (*releasev1alpha1.ApplicationSnapshot, error) {
+	if applicationSnapshotName, found := pipelineRun.Labels["test.appstudio.openshift.io/applicationsnapshot"]; found {
+		applicationSnapshot := &releasev1alpha1.ApplicationSnapshot{}
+		err := r.Get(ctx, types.NamespacedName{
+			Namespace: pipelineRun.Namespace,
+			Name:      applicationSnapshotName,
+		}, applicationSnapshot)
+
+		if err != nil {
+			return nil, err
+		}
+
+		return applicationSnapshot, nil
 	}
 
 	return nil, fmt.Errorf("The pipeline has no component associated with it")
@@ -223,6 +252,6 @@ func CreateApplicationSnapshot(component *hasv1alpha1.Component, applicationComp
 func (r *IntegrationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&tektonv1beta1.PipelineRun{}).
-		WithEventFilter(tekton.BuildPipelineRunSucceededPredicate()).
+		WithEventFilter(tekton.BuildOrPrelimPipelineRunSucceededPredicate()).
 		Complete(r)
 }

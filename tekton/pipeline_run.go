@@ -18,6 +18,7 @@ package tekton
 
 import (
 	"fmt"
+	hasv1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
 	"github.com/redhat-appstudio/integration-service/api/v1alpha1"
 	releasev1alpha1 "github.com/redhat-appstudio/release-service/api/v1alpha1"
 	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
@@ -28,14 +29,10 @@ import (
 type PipelineType string
 
 const (
-	// pipelinesLabelPrefix is the prefix of the pipelines label
-	pipelinesLabelPrefix = "pipelines.appstudio.openshift.io"
-
-	// integrationLabelPrefix is the prefix of the integration labels
-	integrationLabelPrefix = "integration.appstudio.openshift.io"
-
-	// applicationsnapshotLabelPrefix is the prefix of the applicationSnapshot labels
-	applicationsnapshotLabelPrefix = "applicationsnapshot.appstudio.openshift.io"
+	// pipelineLabelPrefix is the prefix of the pipeline labels
+	pipelineLabelPrefix = "pipelines.appstudio.openshift.io"
+	// testLabelPrefix is the prefix of the test integration labels
+	testLabelPrefix = "test.appstudio.openshift.io"
 
 	//PipelineTypePreliminary is the type for PipelineRuns created to run a preliminary integration Pipeline
 	PipelineTypePreliminary = "preliminary"
@@ -46,31 +43,31 @@ const (
 
 var (
 	// PipelinesTypeLabel is the label used to describe the type of pipeline
-	PipelinesTypeLabel = fmt.Sprintf("%s/%s", pipelinesLabelPrefix, "type")
+	PipelinesTypeLabel = fmt.Sprintf("%s/%s", pipelineLabelPrefix, "type")
 
-	// IntegrationNameLabel is the label used to specify the name of the Integration associated with the PipelineRun
-	IntegrationNameLabel = fmt.Sprintf("%s/%s", integrationLabelPrefix, "name")
+	// ComponentLabel is the label used to specify the name of the Component associated with the PipelineRun
+	ComponentLabel = fmt.Sprintf("%s/%s", testLabelPrefix, "component")
 
-	// ApplicationSnapshotNameLabel is the label used to specify the name of the Integration associated with the PipelineRun
-	ApplicationSnapshotNameLabel = fmt.Sprintf("%s/%s", applicationsnapshotLabelPrefix, "name")
+	// ApplicationSnapshotLabel is the label used to specify the name of the ApplicationSnapshot associated with the PipelineRun
+	ApplicationSnapshotLabel = fmt.Sprintf("%s/%s", testLabelPrefix, "applicationsnapshot")
 
-	// IntegrationWorkspaceLabel is the label used to specify the workspace of the Integration associated with the PipelineRun
-	IntegrationWorkspaceLabel = fmt.Sprintf("%s/%s", integrationLabelPrefix, "workspace")
+	// ApplicationLabel is the label used to specify the Application associated with the PipelineRun
+	ApplicationLabel = fmt.Sprintf("%s/%s", testLabelPrefix, "application")
 )
 
 // CreatePreliminaryPipelineRun creates a PipelineRun from a given ApplicationSnapshot and IntegrationScenario.
 // ApplicationSnapshot details are added to the labels of the new PipelineRun to be able to reference it later on.
-func CreatePreliminaryPipelineRun(applicationSnapshot *releasev1alpha1.ApplicationSnapshot, integrationScenario *v1alpha1.IntegrationScenario) *tektonv1beta1.PipelineRun {
+func CreatePreliminaryPipelineRun(component *hasv1alpha1.Component, application *hasv1alpha1.Application, applicationSnapshot *releasev1alpha1.ApplicationSnapshot, integrationScenario *v1alpha1.IntegrationScenario) *tektonv1beta1.PipelineRun {
 	return &tektonv1beta1.PipelineRun{
 		ObjectMeta: v1.ObjectMeta{
 			GenerateName: integrationScenario.Name + "-",
 			Labels: map[string]string{
-				PipelinesTypeLabel:           PipelineTypePreliminary,
-				IntegrationNameLabel:         applicationSnapshot.Name,
-				ApplicationSnapshotNameLabel: applicationSnapshot.Name,
-				IntegrationWorkspaceLabel:    applicationSnapshot.Namespace,
+				PipelinesTypeLabel:       PipelineTypePreliminary,
+				ComponentLabel:           component.Name,
+				ApplicationSnapshotLabel: applicationSnapshot.Name,
+				ApplicationLabel:         application.Name,
 			},
-			Namespace: integrationScenario.Namespace,
+			Namespace: component.Namespace,
 		},
 		Spec: tektonv1beta1.PipelineRunSpec{
 			PipelineRef: &tektonv1beta1.PipelineRef{
@@ -81,17 +78,17 @@ func CreatePreliminaryPipelineRun(applicationSnapshot *releasev1alpha1.Applicati
 	}
 }
 
-// CreatePreliminaryPipelineRun creates a PipelineRun from a given ApplicationSnapshot and IntegrationScenario.
+// CreateFinalPipelineRun creates a PipelineRun from a given ApplicationSnapshot and IntegrationScenario.
 // ApplicationSnapshot details are added to the labels of the new PipelineRun to be able to reference it later on.
-func CreateFinalPipelineRun(applicationSnapshot *releasev1alpha1.ApplicationSnapshot, integrationScenario *v1alpha1.IntegrationScenario) *tektonv1beta1.PipelineRun {
+func CreateFinalPipelineRun(component *hasv1alpha1.Component, application *hasv1alpha1.Application, applicationSnapshot *releasev1alpha1.ApplicationSnapshot, integrationScenario *v1alpha1.IntegrationScenario) *tektonv1beta1.PipelineRun {
 	return &tektonv1beta1.PipelineRun{
 		ObjectMeta: v1.ObjectMeta{
 			GenerateName: integrationScenario.Name + "-",
 			Labels: map[string]string{
-				PipelinesTypeLabel:           PipelineTypeFinal,
-				IntegrationNameLabel:         integrationScenario.Name,
-				ApplicationSnapshotNameLabel: applicationSnapshot.Name,
-				IntegrationWorkspaceLabel:    integrationScenario.Namespace,
+				PipelinesTypeLabel:       PipelineTypeFinal,
+				ComponentLabel:           component.Name,
+				ApplicationSnapshotLabel: applicationSnapshot.Name,
+				ApplicationLabel:         application.Name,
 			},
 			Namespace: integrationScenario.Namespace,
 		},

@@ -27,7 +27,6 @@ func IsPrelimPipelineRun(object client.Object) bool {
 			"pipelines.appstudio.openshift.io/type",
 			"preliminary")
 	}
-
 	return false
 }
 
