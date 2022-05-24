@@ -99,23 +99,25 @@ func (r *IntegrationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		log.Info("Created ApplicationSnapshot for Application ", application.Name,
 			" with Images: ", applicationSnapshot.Spec.Images)
 
-		integrationScenario, err := r.getIntegrationScenario(ctx, application)
+		prelimIntegrationScenarios, err := r.getIntegrationScenariosForTestContext(ctx, application, "preliminary")
 		if err != nil {
-			log.Error(err, " Failed to get IntegrationScenario for ",
+			log.Error(err, " Failed to get IntegrationScenarios for ",
 				"ApplicationSnapshot.Name ", applicationSnapshot.Name, " ApplicationSnapshot.Namespace ",
 				applicationSnapshot.Namespace)
 			return ctrl.Result{}, nil
 		}
-		pipelineRun := tekton.CreatePreliminaryPipelineRun(component, application, applicationSnapshot, integrationScenario)
-		err = r.Client.Create(ctx, pipelineRun)
-		if err != nil {
-			log.Error(err, " Failed to create Preliminary PipelineRun for ",
-				"ApplicationSnapshot.Name ", applicationSnapshot.Name, " ApplicationSnapshot.Namespace ",
-				applicationSnapshot.Namespace)
-			return ctrl.Result{}, nil
+		for _, integrationScenario := range prelimIntegrationScenarios {
+			pipelineRun := tekton.CreatePreliminaryPipelineRun(component, application, applicationSnapshot, &integrationScenario)
+			err = r.Client.Create(ctx, pipelineRun)
+			if err != nil {
+				log.Error(err, " Failed to create Preliminary PipelineRun for ",
+					"ApplicationSnapshot.Name ", applicationSnapshot.Name, " ApplicationSnapshot.Namespace ",
+					applicationSnapshot.Namespace)
+				return ctrl.Result{}, nil
+			}
+			log.Info("Created the Preliminary Tekton PipelineRun ", pipelineRun.Name, " using bundle ",
+				pipelineRun.Spec.PipelineRef.Bundle, " with IntegrationScenario ", integrationScenario.Name, " for Application ", application.Name)
 		}
-		log.Info("Created the Preliminary Tekton PipelineRun ", pipelineRun.Name, " using bundle ",
-			pipelineRun.Spec.PipelineRef.Bundle, " with IntegrationScenario ", integrationScenario.Name, " for Application ", application.Name)
 	} else if tekton.IsPrelimPipelineRun(pipelineRun) {
 		applicationSnapshot, err := r.getApplicationSnapshotFromTestPipelineRun(ctx, pipelineRun)
 		if err != nil {
@@ -123,7 +125,21 @@ func (r *IntegrationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 				"PipelineRun.Name ", pipelineRun.Name, "PipelineRun.Namespace ", pipelineRun.Namespace)
 			return ctrl.Result{}, nil
 		}
-		log.Info("The Test PipelineRun ", pipelineRun.Name, " for the ApplicationSnapshot ", applicationSnapshot.Name, " Succeeded! ")
+		log.Info("The Test PipelineRun ", pipelineRun.Name, " for the ApplicationSnapshot ",
+			applicationSnapshot.Name, " with IntegrationScenario ",
+			pipelineRun.Labels["test.appstudio.openshift.io/integrationscenario"], " Succeeded! ")
+		allPipelineRuns, err := r.getPipelineRunsForApplicationSnapshot(ctx, applicationSnapshot)
+		var allPipelineRunsSucceeded = true
+		for _, snapshotPipelineRun := range allPipelineRuns {
+			for _, condition := range snapshotPipelineRun.Status.Conditions {
+				if condition.Type == "Succeeded" && condition.Status != "True" {
+					allPipelineRunsSucceeded = false
+				}
+			}
+		}
+		if allPipelineRunsSucceeded {
+			log.Info("All Test PipelineRuns for ApplicationSnapshot ", applicationSnapshot.Name, " have Succeeded!")
+		}
 	}
 
 	return ctrl.Result{}, nil
@@ -204,19 +220,46 @@ func (r *IntegrationReconciler) getApplicationComponents(ctx context.Context, ap
 	return applicationComponents, nil
 }
 
-// getIntegrationScenario get an IntegrationScenario for a given ApplicationSnapshot.
-func (r *IntegrationReconciler) getIntegrationScenario(ctx context.Context, application *hasv1alpha1.Application) (*v1alpha1.IntegrationScenario, error) {
-	integrationScenario := &v1alpha1.IntegrationScenario{}
-	err := r.Get(ctx, types.NamespacedName{
-		Namespace: application.Namespace,
-		Name:      application.Name,
-	}, integrationScenario)
+// getPipelineRunsForApplicationSnapshot loads from the cluster the pipelineRuns associated with the given ApplicationSnapshot.
+//If there are no Pipeline runs for the ApplicationSnapshot or this is not found in the cluster, an error will be returned.
+func (r *IntegrationReconciler) getPipelineRunsForApplicationSnapshot(ctx context.Context, applicationSnapshot *releasev1alpha1.ApplicationSnapshot) ([]tektonv1beta1.PipelineRun, error) {
+	var pipelineRuns []tektonv1beta1.PipelineRun
+	allPipelineRuns := &tektonv1beta1.PipelineRunList{}
+	err := r.List(ctx, allPipelineRuns)
+	for _, pipelineRun := range allPipelineRuns.Items {
+		if pipelineRun.Labels["test.appstudio.openshift.io/applicationsnapshot"] == applicationSnapshot.Name {
+			pipelineRuns = append(pipelineRuns, pipelineRun)
+		}
+	}
 
 	if err != nil {
 		return nil, err
 	}
 
-	return integrationScenario, nil
+	return pipelineRuns, nil
+}
+
+// getIntegrationScenariosForTestContext get an IntegrationScenario for a given ApplicationSnapshot.
+func (r *IntegrationReconciler) getIntegrationScenariosForTestContext(ctx context.Context, application *hasv1alpha1.Application, testContext string) ([]v1alpha1.IntegrationScenario, error) {
+	var integrationScenarios []v1alpha1.IntegrationScenario
+	allIntegrationScenarios := &v1alpha1.IntegrationScenarioList{}
+	err := r.List(ctx, allIntegrationScenarios)
+	for _, integrationScenario := range allIntegrationScenarios.Items {
+		if integrationScenario.Spec.Application == application.Name {
+			for _, integrationScenarioContext := range integrationScenario.Spec.Contexts {
+				if integrationScenarioContext.Name == testContext {
+					integrationScenarios = append(integrationScenarios, integrationScenario)
+					continue
+				}
+			}
+		}
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return integrationScenarios, nil
 }
 
 func CreateApplicationSnapshot(component *hasv1alpha1.Component, applicationComponents []hasv1alpha1.Component, pipelineRun *tektonv1beta1.PipelineRun) (*releasev1alpha1.ApplicationSnapshot, error) {

@@ -53,6 +53,9 @@ var (
 
 	// ApplicationLabel is the label used to specify the Application associated with the PipelineRun
 	ApplicationLabel = fmt.Sprintf("%s/%s", testLabelPrefix, "application")
+
+	// IntegrationScenarioLabel is the label used to specify the IntegrationScenario associated with the PipelineRun
+	IntegrationScenarioLabel = fmt.Sprintf("%s/%s", testLabelPrefix, "integrationscenario")
 )
 
 // CreatePreliminaryPipelineRun creates a PipelineRun from a given ApplicationSnapshot and IntegrationScenario.
@@ -66,6 +69,7 @@ func CreatePreliminaryPipelineRun(component *hasv1alpha1.Component, application 
 				ComponentLabel:           component.Name,
 				ApplicationSnapshotLabel: applicationSnapshot.Name,
 				ApplicationLabel:         application.Name,
+				IntegrationScenarioLabel: integrationScenario.Name,
 			},
 			Namespace: component.Namespace,
 		},

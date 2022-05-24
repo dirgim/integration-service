@@ -42,26 +42,36 @@ spec:
               bundle:
                 description: Tekton Bundle where to find the pipeline
                 type: string
-              environments:
-                description: Environments that will be utilized by the test pipeline
+              contexts:
+                description: Contexts where this IntegrationScenario can be applied
                 items:
-                  description: TestEnvironment contains the name and values of a Test
-                    environment
+                  description: TestContext contains the name and values of a Test
+                    context
                   properties:
+                    description:
+                      type: string
                     name:
                       type: string
-                    testName:
-                      type: string
-                    value:
-                      items:
-                        type: string
-                      type: array
                   required:
                   - name
-                  - testName
-                  - value
                   type: object
                 type: array
+              environment:
+                description: Environment that will be utilized by the test pipeline
+                properties:
+                  name:
+                    type: string
+                  params:
+                    items:
+                      type: string
+                    type: array
+                  type:
+                    type: string
+                required:
+                - name
+                - params
+                - type
+                type: object
               params:
                 description: Params to pass to the pipeline
                 items:

@@ -30,8 +30,10 @@ type IntegrationScenarioSpec struct {
 	Bundle string `json:"bundle,omitempty"`
 	// Params to pass to the pipeline
 	Params []PipelineParameter `json:"params,omitempty"`
-	// Environments that will be utilized by the test pipeline
-	Environments []TestEnvironment `json:"environments,omitempty"`
+	// Environment that will be utilized by the test pipeline
+	Environment TestEnvironment `json:"environment,omitempty"`
+	// Contexts where this IntegrationScenario can be applied
+	Contexts []TestContext `json:"contexts,omitempty"`
 }
 
 // IntegrationScenarioStatus defines the observed state of IntegrationScenario
@@ -46,9 +48,15 @@ type PipelineParameter struct {
 
 // TestEnvironment contains the name and values of a Test environment
 type TestEnvironment struct {
-	Name     string   `json:"name"`
-	TestName string   `json:"testName"`
-	Value    []string `json:"value"`
+	Name   string   `json:"name"`
+	Type   string   `json:"type"`
+	Params []string `json:"params"`
+}
+
+// TestContext contains the name and values of a Test context
+type TestContext struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
 }
 
 //+kubebuilder:object:root=true
