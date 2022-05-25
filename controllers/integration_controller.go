@@ -73,7 +73,7 @@ func (r *IntegrationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			return ctrl.Result{}, nil
 		}
 
-		application, err := r.getApplication(ctx, component)
+		application, err := r.getApplicationForComponent(ctx, component)
 		if err != nil {
 			log.Error(err, " Failed to get Application for ",
 				"Component.Name ", component.Name, "Component.Namespace ", component.Namespace)
@@ -139,6 +139,30 @@ func (r *IntegrationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 		if allPipelineRunsSucceeded {
 			log.Info("All Test PipelineRuns for ApplicationSnapshot ", applicationSnapshot.Name, " have Succeeded!")
+			application, err := r.getApplicationForIntegrationPipelineRun(ctx, pipelineRun)
+			if err != nil {
+				log.Error(err, " Failed to get Application for ",
+					"PipelineRun.Name ", pipelineRun.Name, "PipelineRun.Namespace ", pipelineRun.Namespace)
+				return ctrl.Result{}, nil
+			}
+			releaseLinks, err := r.getApplicationReleaseLinks(ctx, application)
+			if err != nil {
+				log.Error(err, " Failed to get ReleaseLinks for ",
+					"Application.Name ", application.Name, "Application.Namespace ", application.Namespace)
+				return ctrl.Result{}, nil
+			}
+
+			for _, releaseLink := range *releaseLinks {
+				release, err := CreateRelease(applicationSnapshot, &releaseLink)
+				err = r.Client.Create(ctx, release)
+				if err != nil {
+					log.Error(err, " Failed to create Release for ",
+						"ApplicationSnapshot.Name ", applicationSnapshot.Name, " ApplicationSnapshot.Namespace ",
+						applicationSnapshot.Namespace)
+					return ctrl.Result{}, nil
+				}
+				log.Info("Created Release ", release.Name, " for ApplicationSnapshot ", applicationSnapshot.Name)
+			}
 		}
 	}
 
@@ -185,9 +209,9 @@ func (r *IntegrationReconciler) getApplicationSnapshotFromTestPipelineRun(ctx co
 	return nil, fmt.Errorf("The pipeline has no component associated with it")
 }
 
-// getApplication loads from the cluster the Application referenced in the given Component. If the Component doesn't
+// getApplicationForComponent loads from the cluster the Application referenced in the given Component. If the Component doesn't
 // specify an Application or this is not found in the cluster, an error will be returned.
-func (r *IntegrationReconciler) getApplication(ctx context.Context, component *hasv1alpha1.Component) (*hasv1alpha1.Application, error) {
+func (r *IntegrationReconciler) getApplicationForComponent(ctx context.Context, component *hasv1alpha1.Component) (*hasv1alpha1.Application, error) {
 	application := &hasv1alpha1.Application{}
 	err := r.Get(ctx, types.NamespacedName{
 		Namespace: component.Namespace,
@@ -201,23 +225,21 @@ func (r *IntegrationReconciler) getApplication(ctx context.Context, component *h
 	return application, nil
 }
 
-// getApplicationComponents loads from the cluster the Components associated with the given Application. If the Application
-// doesn't have any Components or this is not found in the cluster, an error will be returned.
-func (r *IntegrationReconciler) getApplicationComponents(ctx context.Context, application *hasv1alpha1.Application) ([]hasv1alpha1.Component, error) {
-	applicationComponents := []hasv1alpha1.Component{}
-	allComponents := &hasv1alpha1.ComponentList{}
-	err := r.List(ctx, allComponents)
-	for _, component := range allComponents.Items {
-		if component.Spec.Application == application.Name {
-			applicationComponents = append(applicationComponents, component)
-		}
-	}
+// getApplicationForIntegrationPipelineRun loads from the cluster the Application referenced in the given Component. If the Component doesn't
+// specify an Application or this is not found in the cluster, an error will be returned.
+func (r *IntegrationReconciler) getApplicationForIntegrationPipelineRun(ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) (*hasv1alpha1.Application, error) {
+	application := &hasv1alpha1.Application{}
+	applicationName := pipelineRun.Labels["test.appstudio.openshift.io/application"]
+	err := r.Get(ctx, types.NamespacedName{
+		Namespace: pipelineRun.Namespace,
+		Name:      applicationName,
+	}, application)
 
 	if err != nil {
 		return nil, err
 	}
 
-	return applicationComponents, nil
+	return application, nil
 }
 
 // getPipelineRunsForApplicationSnapshot loads from the cluster the pipelineRuns associated with the given ApplicationSnapshot.
@@ -237,6 +259,40 @@ func (r *IntegrationReconciler) getPipelineRunsForApplicationSnapshot(ctx contex
 	}
 
 	return pipelineRuns, nil
+}
+
+// getApplicationComponents loads from the cluster the Components associated with the given Application. If the Application
+// doesn't have any Components or this is not found in the cluster, an error will be returned.
+func (r *IntegrationReconciler) getApplicationComponents(ctx context.Context, application *hasv1alpha1.Application) (*[]hasv1alpha1.Component, error) {
+	applicationComponents := &hasv1alpha1.ComponentList{}
+	opts := []client.ListOption{
+		client.InNamespace(application.Namespace),
+		client.MatchingFields{"spec.application": application.Name},
+	}
+
+	err := r.List(ctx, applicationComponents, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return &applicationComponents.Items, nil
+}
+
+// getApplicationReleaseLinks returns the ReleaseLinks used by the application being processed. If matching
+// ReleaseLinks are not found, an error will be returned.
+func (r *IntegrationReconciler) getApplicationReleaseLinks(ctx context.Context, application *hasv1alpha1.Application) (*[]releasev1alpha1.ReleaseLink, error) {
+	releaseLinks := &releasev1alpha1.ReleaseLinkList{}
+	opts := []client.ListOption{
+		client.InNamespace(application.Namespace),
+		client.MatchingFields{"spec.application": application.Name},
+	}
+
+	err := r.List(ctx, releaseLinks, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return &releaseLinks.Items, nil
 }
 
 // getIntegrationScenariosForTestContext get an IntegrationScenario for a given ApplicationSnapshot.
@@ -262,10 +318,11 @@ func (r *IntegrationReconciler) getIntegrationScenariosForTestContext(ctx contex
 	return integrationScenarios, nil
 }
 
-func CreateApplicationSnapshot(component *hasv1alpha1.Component, applicationComponents []hasv1alpha1.Component, pipelineRun *tektonv1beta1.PipelineRun) (*releasev1alpha1.ApplicationSnapshot, error) {
-	images := []releasev1alpha1.Image{}
+// CreateApplicationSnapshot creates an ApplicationSnapshot for the given application components and the build pipelineRun.
+func CreateApplicationSnapshot(component *hasv1alpha1.Component, applicationComponents *[]hasv1alpha1.Component, pipelineRun *tektonv1beta1.PipelineRun) (*releasev1alpha1.ApplicationSnapshot, error) {
+	var images []releasev1alpha1.Image
 
-	for _, applicationComponent := range applicationComponents {
+	for _, applicationComponent := range *applicationComponents {
 		pullSpec := applicationComponent.Status.ContainerImage
 		if applicationComponent.Name == component.Name {
 			var err error
@@ -291,8 +348,50 @@ func CreateApplicationSnapshot(component *hasv1alpha1.Component, applicationComp
 	}, nil
 }
 
+// CreateRelease creates a Release for the given ApplicationSnapshot and the ReleaseLink.
+func CreateRelease(applicationSnapshot *releasev1alpha1.ApplicationSnapshot, releaseLink *releasev1alpha1.ReleaseLink) (*releasev1alpha1.Release, error) {
+	return &releasev1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: applicationSnapshot.Name + "-",
+			Namespace:    applicationSnapshot.Namespace,
+		},
+		Spec: releasev1alpha1.ReleaseSpec{
+			ApplicationSnapshot: applicationSnapshot.Name,
+			ReleaseLink:         releaseLink.Name,
+		},
+	}, nil
+}
+
+// setupReleaseLinkCache adds a new index field to be able to search ReleaseLinks by application.
+func setupReleaseLinkCache(mgr ctrl.Manager) error {
+	releaseLinkTargetIndexFunc := func(obj client.Object) []string {
+		return []string{obj.(*releasev1alpha1.ReleaseLink).Spec.Application}
+	}
+
+	return mgr.GetCache().IndexField(context.Background(), &releasev1alpha1.ReleaseLink{},
+		"spec.application", releaseLinkTargetIndexFunc)
+}
+
+// setupApplicationComponentCache adds a new index field to be able to search Components by application.
+func setupApplicationComponentCache(mgr ctrl.Manager) error {
+	releaseLinkTargetIndexFunc := func(obj client.Object) []string {
+		return []string{obj.(*hasv1alpha1.Component).Spec.Application}
+	}
+
+	return mgr.GetCache().IndexField(context.Background(), &hasv1alpha1.Component{},
+		"spec.application", releaseLinkTargetIndexFunc)
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *IntegrationReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	err := setupReleaseLinkCache(mgr)
+	if err != nil {
+		return err
+	}
+	err = setupApplicationComponentCache(mgr)
+	if err != nil {
+		return err
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&tektonv1beta1.PipelineRun{}).
 		WithEventFilter(tekton.BuildOrPrelimPipelineRunSucceededPredicate()).
