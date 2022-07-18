@@ -14,19 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package integration
+package snapshot
 
 import (
 	"context"
 	"fmt"
-	"strings"
-	"time"
-
+	appstudioshared "github.com/dirgim/managed-gitops/appstudio-shared/apis/appstudio.redhat.com/v1alpha1"
 	"github.com/go-logr/logr"
 	hasv1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
 	"github.com/redhat-appstudio/integration-service/controllers/results"
 	"github.com/redhat-appstudio/integration-service/tekton"
-	appstudioshared "github.com/redhat-appstudio/managed-gitops/appstudio-shared/apis/appstudio.redhat.com/v1alpha1"
 	releasev1alpha1 "github.com/redhat-appstudio/release-service/api/v1alpha1"
 	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,12 +31,12 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"strings"
 )
 
 // Adapter holds the objects needed to reconcile a Release.
 type Adapter struct {
-	pipelineRun *tektonv1beta1.PipelineRun
-	component   *hasv1alpha1.Component
+	snapshot    *appstudioshared.ApplicationSnapshot
 	application *hasv1alpha1.Application
 	logger      logr.Logger
 	client      client.Client
@@ -47,11 +44,10 @@ type Adapter struct {
 }
 
 // NewAdapter creates and returns an Adapter instance.
-func NewAdapter(pipelineRun *tektonv1beta1.PipelineRun, component *hasv1alpha1.Component, application *hasv1alpha1.Application, logger logr.Logger, client client.Client,
+func NewAdapter(snapshot *appstudioshared.ApplicationSnapshot, application *hasv1alpha1.Application, logger logr.Logger, client client.Client,
 	context context.Context) *Adapter {
 	return &Adapter{
-		pipelineRun: pipelineRun,
-		component:   component,
+		snapshot:    snapshot,
 		application: application,
 		logger:      logger,
 		client:      client,
@@ -59,46 +55,15 @@ func NewAdapter(pipelineRun *tektonv1beta1.PipelineRun, component *hasv1alpha1.C
 	}
 }
 
-// EnsureApplicationSnapshotExists is an operation that will ensure that an integration ApplicationSnapshot associated
-// to the PipelineRun being processed exists. Otherwise, it will create a new integration ApplicationSnapshot.
-func (a *Adapter) EnsureApplicationSnapshotExists() (results.OperationResult, error) {
-	existingApplicationSnapshot, err := a.findMatchingApplicationSnapshot()
-	if err != nil {
-		return results.RequeueWithError(err)
-	}
-
-	if existingApplicationSnapshot != nil {
-		a.logger.Info("Found existing ApplicationSnapshot",
-			"Application.Name", a.application.Name,
-			"ApplicationSnapshot.Name", existingApplicationSnapshot.Name,
-			"ApplicationSnapshot.Spec.Components", existingApplicationSnapshot.Spec.Components)
-		return results.ContinueProcessing()
-	}
-
-	newApplicationSnapshot, err := a.createApplicationSnapshotForPipelineRun(a.pipelineRun, a.component, a.application)
-	if err != nil {
-		a.logger.Error(err, "Failed to create ApplicationSnapshot",
-			"Application.Name", a.application.Name, "Application.Namespace", a.application.Namespace)
-		return results.RequeueOnErrorOrStop(a.updateStatus())
-	}
-
-	a.logger.Info("Created new ApplicationSnapshot",
-		"Application.Name", a.application.Name,
-		"ApplicationSnapshot.Name", newApplicationSnapshot.Name,
-		"ApplicationSnapshot.Spec.Components", newApplicationSnapshot.Spec.Components)
-
-	return results.ContinueProcessing()
-}
-
-// EnsureAllReleasesExist is an operation that will ensure that all integration Releases associated
+// EnsureAllReleasesExist is an operation that will ensure that all pipeline Releases associated
 // to the ApplicationSnapshot and the Application's ReleaseLinks exist.
 // Otherwise, it will create new Releases for each ReleaseLink.
 func (a *Adapter) EnsureAllReleasesExist() (results.OperationResult, error) {
-	existingApplicationSnapshot, err := a.findMatchingApplicationSnapshot()
-	if err != nil {
-		return results.RequeueWithError(err)
-	} else if existingApplicationSnapshot == nil {
-		return results.RequeueAfter(time.Second*5, err)
+	if a.snapshot.HasSucceeded() {
+		a.logger.Info("Found ApplicationSnapshot hasn't finished testing, holding off on releases",
+			"Application.Name", a.application.Name,
+			"ApplicationSnapshot.Name", a.snapshot.Name)
+		return results.ContinueProcessing()
 	}
 
 	releaseLinks, err := a.getAutoReleaseLinksForApplication(a.application)
@@ -109,32 +74,15 @@ func (a *Adapter) EnsureAllReleasesExist() (results.OperationResult, error) {
 		return results.RequeueOnErrorOrStop(a.updateStatus())
 	}
 
-	err = a.createMissingReleasesForReleaseLinks(releaseLinks, existingApplicationSnapshot)
+	err = a.createMissingReleasesForReleaseLinks(releaseLinks, a.snapshot)
 	if err != nil {
 		a.logger.Error(err, "Failed to create new Releases for",
-			"ApplicationSnapshot.Name", existingApplicationSnapshot.Name,
-			"ApplicationSnapshot.Namespace", existingApplicationSnapshot.Namespace)
+			"ApplicationSnapshot.Name", a.snapshot.Name,
+			"ApplicationSnapshot.Namespace", a.snapshot.Namespace)
 		return results.RequeueOnErrorOrStop(a.updateStatus())
 	}
 
 	return results.ContinueProcessing()
-}
-
-// getApplicationSnapshot returns the all ApplicationSnapshots in the Application's namespace nil if it's not found.
-// In the case the List operation fails, an error will be returned.
-func (a *Adapter) getAllApplicationSnapshots() (*[]appstudioshared.ApplicationSnapshot, error) {
-	applicationSnapshots := &appstudioshared.ApplicationSnapshotList{}
-	opts := []client.ListOption{
-		client.InNamespace(a.application.Namespace),
-		client.MatchingFields{"spec.application": a.application.Name},
-	}
-
-	err := a.client.List(a.context, applicationSnapshots, opts...)
-	if err != nil {
-		return nil, err
-	}
-
-	return &applicationSnapshots.Items, nil
 }
 
 // compareApplicationSnapshots compares two ApplicationSnapshots and returns boolean true if their images match exactly.
@@ -155,42 +103,6 @@ func (a *Adapter) compareApplicationSnapshots(expectedApplicationSnapshot *appst
 
 	}
 	return snapshotsHaveSameNumberOfImages && allImagesMatch
-}
-
-// findMatchingApplicationSnapshot tries to find the expected ApplicationSnapshot with the same set of images.
-func (a *Adapter) findMatchingApplicationSnapshot() (*appstudioshared.ApplicationSnapshot, error) {
-	var allApplicationSnapshots *[]appstudioshared.ApplicationSnapshot
-	expectedApplicationSnapshot, err := a.prepareApplicationSnapshotForPipelineRun(a.pipelineRun, a.component, a.application)
-	if err != nil {
-		return nil, err
-	}
-	allApplicationSnapshots, err = a.getAllApplicationSnapshots()
-	if err != nil {
-		return nil, err
-	}
-	for _, foundApplicationSnapshot := range *allApplicationSnapshots {
-		if a.compareApplicationSnapshots(expectedApplicationSnapshot, &foundApplicationSnapshot) {
-			return &foundApplicationSnapshot, nil
-		}
-	}
-	return nil, nil
-}
-
-// getAllApplicationComponents loads from the cluster all Components associated with the given Application.
-// If the Application doesn't have any Components or this is not found in the cluster, an error will be returned.
-func (a *Adapter) getAllApplicationComponents(application *hasv1alpha1.Application) (*[]hasv1alpha1.Component, error) {
-	applicationComponents := &hasv1alpha1.ComponentList{}
-	opts := []client.ListOption{
-		client.InNamespace(application.Namespace),
-		client.MatchingFields{"spec.application": application.Name},
-	}
-
-	err := a.client.List(a.context, applicationComponents, opts...)
-	if err != nil {
-		return nil, err
-	}
-
-	return &applicationComponents.Items, nil
 }
 
 // getAllApplicationReleaseLinks returns the ReleaseLinks used by the application being processed. If matching
@@ -251,60 +163,6 @@ func (a *Adapter) getImagePullSpecFromPipelineRun(pipelineRun *tektonv1beta1.Pip
 	return fmt.Sprintf("%s@%s", strings.Split(outputImage, ":")[0], imageDigest), nil
 }
 
-// prepareApplicationSnapshotForPipelineRun prepares the ApplicationSnapshot for a given PipelineRun,
-// component and application. In case the ApplicationSnapshot can't be created, an error will be returned.
-func (a *Adapter) prepareApplicationSnapshotForPipelineRun(pipelineRun *tektonv1beta1.PipelineRun,
-	component *hasv1alpha1.Component, application *hasv1alpha1.Application) (*appstudioshared.ApplicationSnapshot, error) {
-	applicationComponents, err := a.getAllApplicationComponents(application)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get all Application Components for Application %s", a.application.Name)
-	}
-	var components []appstudioshared.ApplicationSnapshotComponent
-
-	for _, applicationComponent := range *applicationComponents {
-		pullSpec := applicationComponent.Status.ContainerImage
-		if applicationComponent.Name == component.Name {
-			pullSpec, err = a.getImagePullSpecFromPipelineRun(pipelineRun)
-			if err != nil {
-				return nil, err
-			}
-		}
-		components = append(components, appstudioshared.ApplicationSnapshotComponent{
-			Name:           applicationComponent.Name,
-			ContainerImage: pullSpec,
-		})
-	}
-
-	applicationSnapshot := &appstudioshared.ApplicationSnapshot{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: application.Name + "-",
-			Namespace:    application.Namespace,
-		},
-		Spec: appstudioshared.ApplicationSnapshotSpec{
-			Application: application.Name,
-			Components:  components,
-		},
-	}
-	return applicationSnapshot, nil
-}
-
-// createApplicationSnapshotForPipelineRun creates the ApplicationSnapshot for a given PipelineRun
-// In case the ApplicationSnapshot can't be created, an error will be returned.
-func (a *Adapter) createApplicationSnapshotForPipelineRun(pipelineRun *tektonv1beta1.PipelineRun,
-	component *hasv1alpha1.Component, application *hasv1alpha1.Application) (*appstudioshared.ApplicationSnapshot, error) {
-	applicationSnapshot, err := a.prepareApplicationSnapshotForPipelineRun(pipelineRun, component, application)
-	if err != nil {
-		return nil, err
-	}
-
-	err = a.client.Create(a.context, applicationSnapshot)
-	if err != nil {
-		return nil, err
-	}
-
-	return applicationSnapshot, nil
-}
-
 // createReleaseForReleaseLink creates the Release for a given ReleaseLink.
 // In case the Release can't be created, an error will be returned.
 func (a *Adapter) createReleaseForReleaseLink(releaseLink *releasev1alpha1.ReleaseLink, applicationSnapshot *appstudioshared.ApplicationSnapshot) (*releasev1alpha1.Release, error) {
@@ -362,5 +220,5 @@ func (a *Adapter) createMissingReleasesForReleaseLinks(releaseLinks *[]releasev1
 
 // updateStatus updates the status of the PipelineRun being processed.
 func (a *Adapter) updateStatus() error {
-	return a.client.Status().Update(a.context, a.pipelineRun)
+	return a.client.Status().Update(a.context, a.snapshot)
 }

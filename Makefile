@@ -28,7 +28,7 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 # This variable is used to construct full image tags for bundle and catalog images.
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
-# redhat.com/integration-service-bundle:$VERSION and my.domain/integration-service-catalog:$VERSION.
+# redhat.com/pipeline-service-bundle:$VERSION and my.domain/pipeline-service-catalog:$VERSION.
 IMAGE_TAG_BASE ?= quay.io/redhat-appstudio/integration-service
 
 # TAG_NAME defines the tag for the new image

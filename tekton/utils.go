@@ -20,6 +20,18 @@ func IsBuildPipelineRun(object client.Object) bool {
 	return false
 }
 
+// IsIntegrationPipelineRun returns a boolean indicating whether the object passed is an Integration
+// Component PipelineRun
+func IsIntegrationPipelineRun(object client.Object) bool {
+	if pipelineRun, ok := object.(*tektonv1beta1.PipelineRun); ok {
+		return helpers.HasLabelWithValue(pipelineRun,
+			"pipelines.appstudio.openshift.io/type",
+			"test")
+	}
+
+	return false
+}
+
 // hasPipelineSucceeded returns a boolean indicating whether the PipelineRun succeeded or not.
 // If the object passed to this function is not a PipelineRun, the function will return false.
 func hasPipelineSucceeded(objectOld, objectNew client.Object) bool {
@@ -59,4 +71,14 @@ func GetOutputImageDigest(object client.Object) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("couldn't find the IMAGE_DIGEST TaskRun result")
+}
+
+// GetTypeFromPipelineRun extracts the pipeline type from the pipelineRun labels.
+func GetTypeFromPipelineRun(object client.Object) (string, error) {
+	if pipelineRun, ok := object.(*tektonv1beta1.PipelineRun); ok {
+		if pipelineType, found := pipelineRun.Labels["pipelines.appstudio.openshift.io/type"]; found {
+			return pipelineType, nil
+		}
+	}
+	return "", fmt.Errorf("the pipelineRun has no type associated with it")
 }

@@ -617,6 +617,8 @@ github.com/dgryski/go-sip13 v0.0.0-20181026042036-e10d5fee7954/go.mod h1:vAd38F8
 github.com/digitalocean/godo v1.7.5/go.mod h1:h6faOIcZ8lWIwNQ+DN7b3CgX4Kwby5T+nbpNqkUIozU=
 github.com/dimchansky/utfbom v1.1.0/go.mod h1:rO41eb7gLfo8SF1jd9F8HplJm1Fewwi4mQvIirEdv+8=
 github.com/dimchansky/utfbom v1.1.1/go.mod h1:SxdoEBH5qIqFocHMyGOXVAybYJdr71b1Q/j0mACtrfE=
+github.com/dirgim/managed-gitops/appstudio-shared v0.0.0-20220713092952-78bafa00e1c0 h1:4vkkX98bgAkaXOWPRlP/MR9X/LMfu0t4XQ+W9AcdrmU=
+github.com/dirgim/managed-gitops/appstudio-shared v0.0.0-20220713092952-78bafa00e1c0/go.mod h1:lrvXtdnRVwdSdI5yGV313DOi8RhFK1uZ14n2xqmFZtQ=
 github.com/dnaeon/go-vcr v1.0.1/go.mod h1:aBB1+wY4s93YsC3HHjMBMrwTj2R9FHDzUr9KyGc8n1E=
 github.com/dnaeon/go-vcr v1.2.0/go.mod h1:R4UdLID7HZT3taECzJs4YgbbH6PIGXB6W/sc5OLb6RQ=
 github.com/docker/cli v0.0.0-20191017083524-a8ff7f821017/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
@@ -1678,6 +1680,7 @@ github.com/openzipkin/zipkin-go v0.2.2/go.mod h1:NaW6tEwdmWMaCDZzg8sh+IBNOxHMPnh
 github.com/openzipkin/zipkin-go v0.2.5/go.mod h1:KpXfKdgRDnnhsxw4pNIH9Md5lyFqKUa4YDFlwRYAMyE=
 github.com/openzipkin/zipkin-go v0.3.0/go.mod h1:4c3sLeE8xjNqehmF5RpAFLPLJxXscc0R4l6Zg0P1tTQ=
 github.com/operator-framework/api v0.10.0/go.mod h1:tV0BUNvly7szq28ZPBXhjp1Sqg5yHCOeX19ui9K4vjI=
+github.com/operator-framework/operator-lib v0.10.0 h1:tTjrt8Udi0msABkMpgxKHp7sXKnC73jFPO5Col0tWso=
 github.com/operator-framework/operator-lib v0.10.0/go.mod h1:sdCls/olFjSHLXU0bHlaPtmyeIdentoxz/9miyw27kw=
 github.com/oracle/oci-go-sdk v7.0.0+incompatible/go.mod h1:VQb79nF8Z2cwLkLS35ukwStZIg5F66tcBccjip/j888=
 github.com/oracle/oci-go-sdk v13.1.0+incompatible/go.mod h1:VQb79nF8Z2cwLkLS35ukwStZIg5F66tcBccjip/j888=
@@ -1817,8 +1820,6 @@ github.com/redhat-appstudio/application-service v0.0.0-20220310134421-5864c77a3d
 github.com/redhat-appstudio/application-service v0.0.0-20220509201208-86571e38f52e h1:Vx7tzbgpkwr2vyLoAhPi7Qrv/Pul1b4z7i4cNqhkMuo=
 github.com/redhat-appstudio/application-service v0.0.0-20220509201208-86571e38f52e/go.mod h1:QzlBejIgkmnzM/tiKzJKK86IXil/6j8KxmxaDInqtmU=
 github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220603115212-1fb4d804a8c2/go.mod h1:zI6l6177ZbAu4MNovCWinVq3Ii3qpD9svV7t9a58b/s=
-github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220616131733-1638c00a7583 h1:KzIMBOX6pE1TkK1knxON1pvu0URSuwC33MBOTuiSz8A=
-github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220616131733-1638c00a7583/go.mod h1:zI6l6177ZbAu4MNovCWinVq3Ii3qpD9svV7t9a58b/s=
 github.com/redhat-appstudio/release-service v0.0.0-20220620143459-53c2f4bcc510 h1:5SLfnWPQnaV1voVsuekQ5wstSp35ymYydiNlp8I3Cz0=
 github.com/redhat-appstudio/release-service v0.0.0-20220620143459-53c2f4bcc510/go.mod h1:qzyWjltIIfP1ieenpfZtiL3jqG8v1hiGDngjpqZtBK0=
 github.com/redhat-appstudio/service-provider-integration-operator v0.4.3/go.mod h1:S7NKaaZ0rhCrmHGqae9i21ROY23LurTtII3eMKqxjBQ=

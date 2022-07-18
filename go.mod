@@ -3,11 +3,12 @@ module github.com/redhat-appstudio/integration-service
 go 1.17
 
 require (
+	github.com/dirgim/managed-gitops/appstudio-shared v0.0.0-20220713092952-78bafa00e1c0
 	github.com/go-logr/logr v1.2.3
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.19.0
+	github.com/operator-framework/operator-lib v0.10.0
 	github.com/redhat-appstudio/application-service v0.0.0-20220509201208-86571e38f52e
-	github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220616131733-1638c00a7583
 	github.com/redhat-appstudio/release-service v0.0.0-20220620143459-53c2f4bcc510
 	github.com/tektoncd/pipeline v0.35.0
 	k8s.io/apimachinery v0.24.2
