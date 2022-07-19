@@ -381,6 +381,8 @@ func (a *Adapter) prepareApplicationSnapshotForPipelineRun(pipelineRun *tektonv1
 			Components:  components,
 		},
 	}
+	applicationSnapshot.Labels["component"] = a.component.Name
+
 	return applicationSnapshot, nil
 }
 
@@ -392,7 +394,6 @@ func (a *Adapter) createApplicationSnapshotForPipelineRun(pipelineRun *tektonv1b
 	if err != nil {
 		return nil, err
 	}
-
 	err = a.client.Create(a.context, applicationSnapshot)
 	if err != nil {
 		return nil, err

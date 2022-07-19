@@ -71,17 +71,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	application, err := r.getApplicationFromSnapshot(ctx, snapshot)
 	if err != nil {
 		logger.Error(err, "Failed to get Application for ",
+			"ApplicationSnapshot.Name ", snapshot.Name, "ApplicationSnapshot.Namespace ", snapshot.Namespace)
+		return ctrl.Result{}, err
+	}
+
+	component, err := r.getComponentFromSnapshot(ctx, snapshot)
+	if err != nil {
+		logger.Error(err, "Failed to get Application for ",
 			"Component.Name ", snapshot.Name, "Component.Namespace ", snapshot.Namespace)
 		return ctrl.Result{}, err
 	}
 
-	adapter := NewAdapter(snapshot, application, logger, r.Client, ctx)
+	adapter := NewAdapter(snapshot, application, component, logger, r.Client, ctx)
 
 	return r.ReconcileHandler(adapter)
 }
 
-// getApplicationFromSnapshot loads from the cluster the Application referenced in the given ApplicationSnapshot. If the ApplicationSnapshot doesn't
-// specify an Application or this is not found in the cluster, an error will be returned.
+// getApplicationFromSnapshot loads from the cluster the Application referenced in the given ApplicationSnapshot.
+// If the ApplicationSnapshot doesn't specify an Component or this is not found in the cluster, an error will be returned.
 func (r *Reconciler) getApplicationFromSnapshot(context context.Context, snapshot *appstudioshared.ApplicationSnapshot) (*hasv1alpha1.Application, error) {
 	application := &hasv1alpha1.Application{}
 	err := r.Get(context, types.NamespacedName{
@@ -94,6 +101,26 @@ func (r *Reconciler) getApplicationFromSnapshot(context context.Context, snapsho
 	}
 
 	return application, nil
+}
+
+// getComponentFromSnapshot loads from the cluster the Component referenced in the given ApplicationSnapshot.
+// If the ApplicationSnapshot doesn't specify an Application or this is not found in the cluster, an error will be returned.
+func (r *Reconciler) getComponentFromSnapshot(context context.Context, snapshot *appstudioshared.ApplicationSnapshot) (*hasv1alpha1.Component, error) {
+	if componentLabel, ok := snapshot.Labels["component"]; ok {
+		component := &hasv1alpha1.Component{}
+		err := r.Get(context, types.NamespacedName{
+			Namespace: snapshot.Namespace,
+			Name:      componentLabel,
+		}, component)
+
+		if err != nil {
+			return nil, err
+		}
+
+		return component, nil
+	} else {
+		return nil, nil
+	}
 }
 
 // AdapterInterface is an interface defining all the operations that should be defined in an Integration adapter.

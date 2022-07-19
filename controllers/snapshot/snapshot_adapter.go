@@ -22,6 +22,7 @@ import (
 	appstudioshared "github.com/dirgim/managed-gitops/appstudio-shared/apis/appstudio.redhat.com/v1alpha1"
 	"github.com/go-logr/logr"
 	hasv1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
+	"github.com/redhat-appstudio/integration-service/api/v1alpha1"
 	"github.com/redhat-appstudio/integration-service/controllers/results"
 	"github.com/redhat-appstudio/integration-service/tekton"
 	releasev1alpha1 "github.com/redhat-appstudio/release-service/api/v1alpha1"
@@ -38,21 +39,49 @@ import (
 type Adapter struct {
 	snapshot    *appstudioshared.ApplicationSnapshot
 	application *hasv1alpha1.Application
+	component   *hasv1alpha1.Component
 	logger      logr.Logger
 	client      client.Client
 	context     context.Context
 }
 
 // NewAdapter creates and returns an Adapter instance.
-func NewAdapter(snapshot *appstudioshared.ApplicationSnapshot, application *hasv1alpha1.Application, logger logr.Logger, client client.Client,
+func NewAdapter(snapshot *appstudioshared.ApplicationSnapshot, application *hasv1alpha1.Application, component *hasv1alpha1.Component, logger logr.Logger, client client.Client,
 	context context.Context) *Adapter {
 	return &Adapter{
 		snapshot:    snapshot,
 		application: application,
+		component:   component,
 		logger:      logger,
 		client:      client,
 		context:     context,
 	}
+}
+
+// EnsureAllIntegrationTestPipelinesExist is an operation that will ensure that all Integration test pipelines
+// associated with the ApplicationSnapshot and the Application's IntegrationTestScenarios exist.
+// Otherwise, it will create new Releases for each ReleaseLink.
+func (a *Adapter) EnsureAllIntegrationTestPipelinesExist() (results.OperationResult, error) {
+	integrationTestScenarios, err := a.getIntegrationScenariosForTestContext(a.application, "component")
+	if err != nil {
+		a.logger.Error(err, " Failed to get IntegrationScenarios for ",
+			"ApplicationSnapshot.Name ", a.snapshot.Name, " ApplicationSnapshot.Namespace ",
+			a.snapshot.Namespace)
+		return results.RequeueOnErrorOrStop(a.updateStatus())
+	}
+	for _, integrationTestScenario := range integrationTestScenarios {
+		pipelineRun := tekton.CreateComponentPipelineRun(a.component, a.application, a.snapshot, &integrationTestScenario)
+		err = a.client.Create(a.context, pipelineRun)
+		if err != nil {
+			a.logger.Error(err, " Failed to create Component PipelineRun for ",
+				"ApplicationSnapshot.Name ", a.snapshot.Name, " ApplicationSnapshot.Namespace ",
+				a.snapshot.Namespace)
+			return results.RequeueOnErrorOrStop(a.updateStatus())
+		}
+		a.logger.Info("Created the Component Tekton PipelineRun ", pipelineRun.Name, "using bundle ",
+			pipelineRun.Spec.PipelineRef.Bundle, "IntegrationScenario ", integrationTestScenario.Name, "Application ", a.application.Name)
+	}
+	return results.ContinueProcessing()
 }
 
 // EnsureAllReleasesExist is an operation that will ensure that all pipeline Releases associated
@@ -216,6 +245,33 @@ func (a *Adapter) createMissingReleasesForReleaseLinks(releaseLinks *[]releasev1
 		}
 	}
 	return nil
+}
+
+// getIntegrationScenariosForTestContext get an IntegrationScenario for a given ApplicationSnapshot.
+func (a *Adapter) getIntegrationScenariosForTestContext(application *hasv1alpha1.Application, testContext string) ([]v1alpha1.IntegrationTestScenario, error) {
+	var integrationScenarios []v1alpha1.IntegrationTestScenario
+	allIntegrationScenarios := &v1alpha1.IntegrationTestScenarioList{}
+	err := a.client.List(a.context, allIntegrationScenarios)
+	for _, integrationScenario := range allIntegrationScenarios.Items {
+		if integrationScenario.Spec.Application == application.Name {
+			if len(integrationScenario.Spec.Contexts) != 0 {
+				for _, integrationScenarioContext := range integrationScenario.Spec.Contexts {
+					if integrationScenarioContext.Name == testContext {
+						integrationScenarios = append(integrationScenarios, integrationScenario)
+						continue
+					}
+				}
+			} else {
+				integrationScenarios = append(integrationScenarios, integrationScenario)
+			}
+		}
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return integrationScenarios, nil
 }
 
 // updateStatus updates the status of the PipelineRun being processed.
