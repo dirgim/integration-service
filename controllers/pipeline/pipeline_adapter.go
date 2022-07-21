@@ -100,7 +100,7 @@ func (a *Adapter) EnsureApplicationSnapshotPassedAllTests() (results.OperationRe
 		return results.RequeueWithError(err)
 	}
 	if pipelineType != "test" {
-		a.logger.Info("PipelineRun isn't a test pipeline, nothing to do",
+		a.logger.Info("PipelineRun isn't a test pipeline",
 			"PipelineRun.Name", a.pipelineRun.Name,
 			"pipelineType", pipelineType)
 		return results.ContinueProcessing()
@@ -381,7 +381,13 @@ func (a *Adapter) prepareApplicationSnapshotForPipelineRun(pipelineRun *tektonv1
 			Components:  components,
 		},
 	}
-	applicationSnapshot.Labels["component"] = a.component.Name
+	if applicationSnapshot.Labels == nil {
+		applicationSnapshot.Labels = map[string]string{
+			"component": a.component.Name,
+		}
+	} else {
+		applicationSnapshot.Labels["component"] = a.component.Name
+	}
 
 	return applicationSnapshot, nil
 }

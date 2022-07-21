@@ -126,6 +126,8 @@ func (r *Reconciler) getComponentFromSnapshot(context context.Context, snapshot 
 // AdapterInterface is an interface defining all the operations that should be defined in an Integration adapter.
 type AdapterInterface interface {
 	EnsureAllReleasesExist() (results.OperationResult, error)
+	EnsureApplicationSnapshotEnvironmentBindingExist() (results.OperationResult, error)
+	EnsureAllIntegrationTestPipelinesExist() (results.OperationResult, error)
 }
 
 // ReconcileOperation defines the syntax of functions invoked by the ReconcileHandler
@@ -136,6 +138,8 @@ type ReconcileOperation func() (results.OperationResult, error)
 func (r *Reconciler) ReconcileHandler(adapter AdapterInterface) (ctrl.Result, error) {
 	operations := []ReconcileOperation{
 		adapter.EnsureAllReleasesExist,
+		adapter.EnsureApplicationSnapshotEnvironmentBindingExist,
+		adapter.EnsureAllIntegrationTestPipelinesExist,
 	}
 
 	for _, operation := range operations {
@@ -186,14 +190,24 @@ func setupReleaseCache(mgr ctrl.Manager) error {
 		"spec.applicationSnapshot", releaseIndexFunc)
 }
 
-// setupApplicationSnapshotCache adds a new index field to be able to search ApplicationSnapshots by Application.
-func setupApplicationSnapshotCache(mgr ctrl.Manager) error {
-	applicationSnapshotIndexFunc := func(obj client.Object) []string {
-		return []string{obj.(*appstudioshared.ApplicationSnapshot).Spec.Application}
+// setupEnvironmentCache adds a new index field to be able to search Environments by Application.
+func setupEnvironmentCache(mgr ctrl.Manager) error {
+	environmentIndexFunc := func(obj client.Object) []string {
+		return []string{obj.(*appstudioshared.ApplicationSnapshotEnvironmentBinding).Spec.Application}
 	}
 
-	return mgr.GetCache().IndexField(context.Background(), &appstudioshared.ApplicationSnapshot{},
-		"spec.application", applicationSnapshotIndexFunc)
+	return mgr.GetCache().IndexField(context.Background(), &appstudioshared.ApplicationSnapshotEnvironmentBinding{},
+		"spec.application", environmentIndexFunc)
+}
+
+// setupEnvironmentCache adds a new index field to be able to search Applications by Environment.
+func setupApplicationCache(mgr ctrl.Manager) error {
+	applicationIndexFunc := func(obj client.Object) []string {
+		return []string{obj.(*appstudioshared.ApplicationSnapshotEnvironmentBinding).Spec.Environment}
+	}
+
+	return mgr.GetCache().IndexField(context.Background(), &appstudioshared.ApplicationSnapshotEnvironmentBinding{},
+		"spec.environment", applicationIndexFunc)
 }
 
 // setupControllerWithManager sets up the controller with the Manager which monitors new build PipelineRuns and filters
@@ -204,6 +218,14 @@ func setupControllerWithManager(manager ctrl.Manager, reconciler *Reconciler) er
 		return err
 	}
 	err = setupReleaseCache(manager)
+	if err != nil {
+		return err
+	}
+	err = setupEnvironmentCache(manager)
+	if err != nil {
+		return err
+	}
+	err = setupApplicationCache(manager)
 	if err != nil {
 		return err
 	}
