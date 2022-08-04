@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/redhat-appstudio/integration-service/api/v1alpha1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	"knative.dev/pkg/apis"
 	"strings"
@@ -149,24 +150,29 @@ func (a *Adapter) EnsureApplicationSnapshotPassedAllTests() (results.OperationRe
 		return results.RequeueOnErrorOrStop(a.updateStatus())
 	}
 	if allIntegrationPipelineRunsPassed {
-		existingApplicationSnapshot, err := a.updateApplicationSnapshotResults(existingApplicationSnapshot, "passed")
+		existingApplicationSnapshot, err = a.markSnapshotAsPassed(existingApplicationSnapshot, "All Integration Pipeline tests passed")
 		if err != nil {
-			a.logger.Error(err, "Failed to Update ApplicationSnapshot Stage")
+			a.logger.Error(err, "Failed to Update ApplicationSnapshot Status")
 			return results.RequeueOnErrorOrStop(a.updateStatus())
 		}
 		a.logger.Info("All Integration PipelineRuns succeeded, marking ApplicationSnapshot as succeeded",
 			"Application.Name", a.application.Name,
 			"ApplicationSnapshot.Name", existingApplicationSnapshot.Name,
-			"ApplicationSnapshot Stage", existingApplicationSnapshot.Labels[""])
+			"ApplicationSnapshot.Status.Conditions", existingApplicationSnapshot.Status.Conditions,
+			"HACBSTestSucceeded statusConditionTrue", meta.IsStatusConditionTrue(existingApplicationSnapshot.Status.Conditions,
+				"HACBSTestSucceeded"))
 	} else {
-		existingApplicationSnapshot, err := a.updateApplicationSnapshotResults(existingApplicationSnapshot, "failed")
+		existingApplicationSnapshot, err = a.markSnapshotAsFailed(existingApplicationSnapshot, "Some Integration pipeline tests failed")
 		if err != nil {
-			a.logger.Error(err, "Failed to Update ApplicationSnapshot Stage")
+			a.logger.Error(err, "Failed to Update ApplicationSnapshot Status")
 			return results.RequeueOnErrorOrStop(a.updateStatus())
 		}
 		a.logger.Info("Some tests within Integration PipelineRuns failed, marking ApplicationSnapshot as failed",
 			"Application.Name", a.application.Name,
-			"ApplicationSnapshot.Name", existingApplicationSnapshot.Name)
+			"ApplicationSnapshot.Name", existingApplicationSnapshot.Name,
+			"ApplicationSnapshot.Status.Conditions", existingApplicationSnapshot.Status.Conditions,
+			"HACBSTestSucceeded statusConditionTrue", meta.IsStatusConditionTrue(existingApplicationSnapshot.Status.Conditions,
+				"HACBSTestSucceeded"))
 	}
 
 	return results.ContinueProcessing()
@@ -372,11 +378,35 @@ func (a *Adapter) calculateIntegrationPipelineRunOutcome(pipelineRun *tektonv1be
 	return true, nil
 }
 
-// updateApplicationSnapshotResults updates the result label for the ApplicationSnapshot
+// markSnapshotAsPassed updates the result label for the ApplicationSnapshot
 // If the update command fails, an error will be returned
-func (a *Adapter) updateApplicationSnapshotResults(applicationSnapshot *appstudioshared.ApplicationSnapshot, stage string) (*appstudioshared.ApplicationSnapshot, error) {
-	applicationSnapshot.Labels["test.appstudio.openshift.io/result"] = stage
-	err := a.client.Update(a.context, applicationSnapshot)
+func (a *Adapter) markSnapshotAsPassed(applicationSnapshot *appstudioshared.ApplicationSnapshot, message string) (*appstudioshared.ApplicationSnapshot, error) {
+	patch := client.MergeFrom(applicationSnapshot.DeepCopy())
+	meta.SetStatusCondition(&applicationSnapshot.Status.Conditions, metav1.Condition{
+		Type:    "HACBSTestSucceeded",
+		Status:  metav1.ConditionTrue,
+		Reason:  "Passed",
+		Message: message,
+	})
+	err := a.client.Status().Patch(a.context, applicationSnapshot, patch)
+	//err := a.client.Status().Update(a.context, applicationSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	return applicationSnapshot, nil
+}
+
+// markSnapshotAsFailed updates the result label for the ApplicationSnapshot
+// If the update command fails, an error will be returned
+func (a *Adapter) markSnapshotAsFailed(applicationSnapshot *appstudioshared.ApplicationSnapshot, message string) (*appstudioshared.ApplicationSnapshot, error) {
+	patch := client.MergeFrom(applicationSnapshot.DeepCopy())
+	meta.SetStatusCondition(&applicationSnapshot.Status.Conditions, metav1.Condition{
+		Type:    "HACBSTestSucceeded",
+		Status:  metav1.ConditionFalse,
+		Reason:  "Failed",
+		Message: message,
+	})
+	err := a.client.Status().Patch(a.context, applicationSnapshot, patch)
 	if err != nil {
 		return nil, err
 	}
