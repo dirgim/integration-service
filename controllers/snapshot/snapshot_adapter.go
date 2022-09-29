@@ -86,15 +86,29 @@ func (a *Adapter) EnsureAllIntegrationTestPipelinesExist() (results.OperationRes
 				"IntegrationTestScenario.Name", integrationTestScenario.Name,
 				"integrationPipelineRun.Name", integrationPipelineRun.Name)
 		} else {
-			a.logger.Info("Creating new pipelinerun for integrationTestscenario",
-				"IntegrationTestScenario.Name", integrationTestScenario.Name,
-				"app name", a.application.Name,
-				"namespace", a.application.Namespace)
+			if &integrationTestScenario.Spec.Environment != nil {
+				ephemeralBinding, err := a.createEphemeralEnviromentAndBindingForIntegrationScenario(a.application, &integrationTestScenario)
+				if err != nil {
+					a.logger.Error(err, "Failed create an EphemeralEnvironmentBinding for Integration pipeline",
+						"IntegrationTestScenario.Name", integrationPipelineRun,
+						"IntegrationTestScenario.Spec.Environment.Name", integrationTestScenario.Spec.Environment.Name)
+					return results.RequeueOnErrorOrStop(err)
+				}
+				a.logger.Info("Created a new ephemeral environment and binding for integrationTestscenario",
+					"IntegrationTestScenario.Name", integrationTestScenario.Name,
+					"Environment.Name", ephemeralBinding.Spec.Environment,
+					"Binding.Name", ephemeralBinding.Name)
+			}
+
 			err := a.createIntegrationPipelineRun(a.application, &integrationTestScenario, a.snapshot)
 			if err != nil {
 				a.logger.Error(err, "Failed to create pipelineRun for application snapshot and scenario")
 				return results.RequeueOnErrorOrStop(err)
 			}
+			a.logger.Info("Created new pipelinerun for integrationTestscenario",
+				"IntegrationTestScenario.Name", integrationTestScenario.Name,
+				"app name", a.application.Name,
+				"namespace", a.application.Namespace)
 		}
 
 	}
@@ -186,7 +200,7 @@ func (a *Adapter) EnsureApplicationSnapshotEnvironmentBindingExist() (results.Op
 		return results.ContinueProcessing()
 	}
 
-	availableEnvironments, err := a.findAvailableEnvironments()
+	availableEnvironments, err := gitops.FindAvailableEnvironments(a.client, a.context, a.application.Namespace)
 	if err != nil {
 		return results.RequeueWithError(err)
 	}
@@ -286,41 +300,6 @@ func (a *Adapter) createMissingReleasesForReleasePlans(application *hasv1alpha1.
 	return nil
 }
 
-// getAllEnvironments gets all environments in the namespace
-func (a *Adapter) getAllEnvironments() (*[]appstudioshared.Environment, error) {
-
-	environmentList := &appstudioshared.EnvironmentList{}
-	opts := []client.ListOption{
-		client.InNamespace(a.application.Namespace),
-	}
-	err := a.client.List(a.context, environmentList, opts...)
-	return &environmentList.Items, err
-}
-
-// findAvailableEnvironments gets all environments that don't have a ParentEnvironment and are not tagged as ephemeral.
-func (a *Adapter) findAvailableEnvironments() (*[]appstudioshared.Environment, error) {
-	allEnvironments, err := a.getAllEnvironments()
-	if err != nil {
-		return nil, err
-	}
-	availableEnvironments := []appstudioshared.Environment{}
-	for _, environment := range *allEnvironments {
-		if environment.Spec.ParentEnvironment == "" {
-			isEphemeral := false
-			for _, tag := range environment.Spec.Tags {
-				if tag == "ephemeral" {
-					isEphemeral = true
-					break
-				}
-			}
-			if !isEphemeral {
-				availableEnvironments = append(availableEnvironments, environment)
-			}
-		}
-	}
-	return &availableEnvironments, nil
-}
-
 // getAllApplicationComponents loads from the cluster all Components associated with the given Application.
 // If the Application doesn't have any Components or this is not found in the cluster, an error will be returned.
 func (a *Adapter) getAllApplicationComponents(application *hasv1alpha1.Application) (*[]hasv1alpha1.Component, error) {
@@ -405,4 +384,28 @@ func (a *Adapter) updateExistingApplicationSnapshotEnvironmentBindingWithSnapsho
 	}
 
 	return applicationSnapshotEnvironmentBinding, nil
+}
+
+func (a *Adapter) createEphemeralEnviromentAndBindingForIntegrationScenario(application *hasv1alpha1.Application, integrationTestScenario *v1alpha1.IntegrationTestScenario) (*appstudioshared.ApplicationSnapshotEnvironmentBinding, error) {
+	environmentToCopy, err := gitops.GetEnvironment(a.client, a.context, integrationTestScenario.Spec.Environment.Name, application.Namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	ephemeralEnvironment := gitops.CreateEphemeralEnvironmentCopy(environmentToCopy)
+	err = a.client.Create(a.context, ephemeralEnvironment)
+	if err != nil {
+		return nil, err
+	}
+
+	components, err := a.getAllApplicationComponents(a.application)
+	if err != nil {
+		return nil, err
+	}
+
+	ephemeralBinding, err := a.createApplicationSnapshotEnvironmentBindingForSnapshot(application, ephemeralEnvironment, a.snapshot, components)
+	if err != nil {
+		return nil, err
+	}
+	return ephemeralBinding, nil
 }
