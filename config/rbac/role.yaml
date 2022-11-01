@@ -52,7 +52,7 @@ rules:
   verbs:
   - update
 - apiGroups:
-  - appstudio.redhat.com
+  - tekton.dev
   resources:
   - pipelineRuns
   verbs:
@@ -64,13 +64,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - appstudio.redhat.com
+  - tekton.dev
   resources:
   - pipelineRuns/finalizers
   verbs:
   - update
 - apiGroups:
-  - appstudio.redhat.com
+  - tekton.dev
   resources:
   - pipelineRuns/status
   verbs:
