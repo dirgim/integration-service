@@ -22,39 +22,39 @@ rules:
 - apiGroups:
   - appstudio.redhat.com
   resources:
-  - applicationSnapshots
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - appstudio.redhat.com
-  resources:
-  - applicationSnapshots/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - appstudio.redhat.com
-  resources:
-  - applicationSnapshots/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - appstudio.redhat.com
-  resources:
   - applications/finalizers
   verbs:
   - update
 - apiGroups:
+  - appstudio.redhat.com
+  resources:
+  - applicationsnapshots
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - appstudio.redhat.com
+  resources:
+  - applicationsnapshots/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - appstudio.redhat.com
+  resources:
+  - applicationsnapshots/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - tekton.dev
   resources:
-  - pipelineRuns
+  - pipelineruns
   verbs:
   - create
   - delete
@@ -66,13 +66,13 @@ rules:
 - apiGroups:
   - tekton.dev
   resources:
-  - pipelineRuns/finalizers
+  - pipelineruns/finalizers
   verbs:
   - update
 - apiGroups:
   - tekton.dev
   resources:
-  - pipelineRuns/status
+  - pipelineruns/status
   verbs:
   - get
   - patch
