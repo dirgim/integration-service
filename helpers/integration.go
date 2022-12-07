@@ -135,7 +135,7 @@ func (s SortTaskRunsByStartTime) Less(i int, j int) bool {
 // label not set to true or if it is missing the label entirely.
 func GetRequiredIntegrationTestScenariosForApplication(adapterClient client.Client, ctx context.Context, application *applicationapiv1alpha1.Application) (*[]v1alpha1.IntegrationTestScenario, error) {
 	integrationList := &v1alpha1.IntegrationTestScenarioList{}
-	labelRequirement, err := labels.NewRequirement("test.appstudio.openshift.io/optional", selection.NotIn, []string{"true"})
+	labelRequirement, err := labels.NewRequirement(v1alpha1.OptionalScenarioLabel, selection.NotIn, []string{"true"})
 	if err != nil {
 		return nil, err
 	}

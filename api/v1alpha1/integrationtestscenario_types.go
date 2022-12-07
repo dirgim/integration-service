@@ -41,6 +41,11 @@ type IntegrationTestScenarioSpec struct {
 	Contexts []TestContext `json:"contexts,omitempty"`
 }
 
+const (
+	// OptionalScenarioLabel is the label name for the optional scenario setting
+	OptionalScenarioLabel = "test.appstudio.openshift.io/optional"
+)
+
 // IntegrationTestScenarioStatus defines the observed state of IntegrationTestScenario
 type IntegrationTestScenarioStatus struct {
 }
