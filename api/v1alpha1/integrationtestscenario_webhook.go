@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
+	"github.com/go-logr/logr"
 	applicationapiv1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -26,21 +27,24 @@ import (
 	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
 var (
 	managerClient client.Client
+	logger        logr.Logger
 )
 
 func (in *IntegrationTestScenario) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	managerClient = mgr.GetClient()
+	logger = logf.Log.WithName("webhook")
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(in).
 		Complete()
 }
 
-// +kubebuilder:webhook:path=/mutate-appstudio-redhat-com-v1alpha1-integrationtestscenario,mutating=true,failurePolicy=fail,sideEffects=None,groups=appstudio.redhat.com,resources=integrationtestscenario,verbs=create,versions=v1alpha1,name=mintegrationtestscenario.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/mutate-appstudio-redhat-com-v1alpha1-integrationtestscenario,mutating=true,failurePolicy=fail,sideEffects=None,groups=appstudio.redhat.com,resources=integrationtestscenarios,verbs=create,versions=v1alpha1,name=mintegrationtestscenario.kb.io,admissionReviewVersions=v1
 
 var _ webhook.Defaulter = &IntegrationTestScenario{}
 
@@ -61,6 +65,7 @@ func (in *IntegrationTestScenario) Default() {
 		}, application)
 
 		if err != nil {
+			logger.Error(err, "Failed to find the application!")
 			return
 		}
 		// The code below sets the Application ownership for the IntegrationTestScenario Object
