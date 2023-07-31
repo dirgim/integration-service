@@ -19,6 +19,7 @@ package snapshot
 import (
 	"context"
 	"fmt"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"reflect"
 	"strings"
 
@@ -506,6 +507,17 @@ func (a *Adapter) createSnapshotEnvironmentBindingForSnapshot(application *appli
 	if err != nil {
 		return nil, err
 	}
+
+	// set application as owner of snapshotEnvironmentBinding
+	ref := metav1.OwnerReference{
+		APIVersion: application.GroupVersionKind().GroupVersion().String(),
+		Kind:       application.Kind,
+		UID:        application.GetUID(),
+		Name:       application.GetName(),
+	}
+	owners := snapshotEnvironmentBinding.GetOwnerReferences()
+	owners = append(owners, ref)
+	snapshotEnvironmentBinding.SetOwnerReferences(owners)
 
 	for _, keyAndValue := range optionalLabelKeysAndValues {
 		if v, ok := keyAndValue[gitops.SnapshotTestScenarioLabel]; ok {
