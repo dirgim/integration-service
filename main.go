@@ -39,7 +39,7 @@ import (
 	applicationapiv1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	integrationv1alpha1 "github.com/redhat-appstudio/integration-service/api/v1alpha1"
 	releasev1alpha1 "github.com/redhat-appstudio/release-service/api/v1alpha1"
-	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
 	"github.com/redhat-appstudio/integration-service/api/v1beta1"
 	//+kubebuilder:scaffold:imports
@@ -55,7 +55,7 @@ func init() {
 	utilruntime.Must(applicationapiv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(integrationv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(v1beta1.AddToScheme(scheme))
-	utilruntime.Must(tektonv1beta1.AddToScheme(scheme))
+	utilruntime.Must(tektonv1.AddToScheme(scheme))
 	utilruntime.Must(releasev1alpha1.AddToScheme(scheme))
 	utilruntime.Must(pacv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
@@ -98,10 +98,13 @@ func main() {
 		setupLog.Error(err, "unable to setup controllers")
 		os.Exit(1)
 	}
-	if err = (&v1beta1.IntegrationTestScenario{}).SetupWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "IntegrationTestScenario")
-		os.Exit(1)
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		if err = (&v1beta1.IntegrationTestScenario{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "IntegrationTestScenario")
+			os.Exit(1)
+		}
 	}
+
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

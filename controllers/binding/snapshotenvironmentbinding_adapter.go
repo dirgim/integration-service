@@ -29,7 +29,7 @@ import (
 	h "github.com/redhat-appstudio/integration-service/helpers"
 	"github.com/redhat-appstudio/integration-service/loader"
 	"github.com/redhat-appstudio/integration-service/tekton"
-	pipeline "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	pipeline "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

@@ -36,7 +36,7 @@ import (
 	"github.com/redhat-appstudio/operator-toolkit/controller"
 	"github.com/redhat-appstudio/operator-toolkit/metadata"
 	releasev1alpha1 "github.com/redhat-appstudio/release-service/api/v1alpha1"
-	pipeline "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	pipeline "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

@@ -13,7 +13,7 @@ import (
 	"github.com/redhat-appstudio/integration-service/gitops"
 	"github.com/redhat-appstudio/integration-service/helpers"
 	"github.com/redhat-appstudio/operator-toolkit/metadata"
-	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"knative.dev/pkg/apis"
@@ -57,7 +57,7 @@ type appCredentials struct {
 	PrivateKey     []byte
 }
 
-func (r *GitHubReporter) getAppCredentials(ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) (*appCredentials, error) {
+func (r *GitHubReporter) getAppCredentials(ctx context.Context, pipelineRun *tektonv1.PipelineRun) (*appCredentials, error) {
 	var err error
 	var found bool
 	appInfo := appCredentials{}
@@ -94,7 +94,7 @@ func (r *GitHubReporter) getAppCredentials(ctx context.Context, pipelineRun *tek
 	return &appInfo, nil
 }
 
-func (r *GitHubReporter) getToken(ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) (string, error) {
+func (r *GitHubReporter) getToken(ctx context.Context, pipelineRun *tektonv1.PipelineRun) (string, error) {
 	var err error
 
 	// List all the Repository CRs in the PipelineRun's namespace
@@ -138,7 +138,7 @@ func (r *GitHubReporter) getToken(ctx context.Context, pipelineRun *tektonv1beta
 	return string(token), nil
 }
 
-func (r *GitHubReporter) createCheckRunAdapter(k8sClient client.Client, ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) (*github.CheckRunAdapter, error) {
+func (r *GitHubReporter) createCheckRunAdapter(k8sClient client.Client, ctx context.Context, pipelineRun *tektonv1.PipelineRun) (*github.CheckRunAdapter, error) {
 	labels := pipelineRun.GetLabels()
 
 	scenario, found := labels[gitops.SnapshotTestScenarioLabel]
@@ -226,7 +226,7 @@ func (r *GitHubReporter) createCheckRunAdapter(k8sClient client.Client, ctx cont
 	}, nil
 }
 
-func (r *GitHubReporter) createCommitStatus(k8sClient client.Client, ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) error {
+func (r *GitHubReporter) createCommitStatus(k8sClient client.Client, ctx context.Context, pipelineRun *tektonv1.PipelineRun) error {
 	var (
 		state       string
 		description string
@@ -289,7 +289,7 @@ func (r *GitHubReporter) createCommitStatus(k8sClient client.Client, ctx context
 	return nil
 }
 
-func (r *GitHubReporter) createComment(k8sClient client.Client, ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) error {
+func (r *GitHubReporter) createComment(k8sClient client.Client, ctx context.Context, pipelineRun *tektonv1.PipelineRun) error {
 	labels := pipelineRun.GetLabels()
 
 	succeeded := pipelineRun.Status.GetCondition(apis.ConditionSucceeded)
@@ -353,7 +353,7 @@ func (r *GitHubReporter) createComment(k8sClient client.Client, ctx context.Cont
 
 // ReportStatus creates/updates CheckRuns when using GitHub App integration.
 // When using GitHub webhook integration a commit status and, in some cases, a comment is created.
-func (r *GitHubReporter) ReportStatus(k8sClient client.Client, ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) error {
+func (r *GitHubReporter) ReportStatus(k8sClient client.Client, ctx context.Context, pipelineRun *tektonv1.PipelineRun) error {
 	if !metadata.HasLabelWithValue(pipelineRun, gitops.PipelineAsCodeEventTypeLabel, gitops.PipelineAsCodePullRequestType) {
 		return nil
 	}

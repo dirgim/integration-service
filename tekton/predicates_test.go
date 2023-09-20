@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/redhat-appstudio/integration-service/tekton"
 
-	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"knative.dev/pkg/apis"
@@ -21,8 +21,8 @@ var _ = Describe("Predicates", func() {
 		namespace = "default"
 	)
 	var (
-		pipelineRun    *tektonv1beta1.PipelineRun
-		newPipelineRun *tektonv1beta1.PipelineRun
+		pipelineRun    *tektonv1.PipelineRun
+		newPipelineRun *tektonv1.PipelineRun
 	)
 
 	Context("when testing BuildPipelineRunSignedAndSucceededPredicate", func() {
@@ -30,7 +30,7 @@ var _ = Describe("Predicates", func() {
 
 		BeforeEach(func() {
 
-			pipelineRun = &tektonv1beta1.PipelineRun{
+			pipelineRun = &tektonv1.PipelineRun{
 				ObjectMeta: v1.ObjectMeta{
 					GenerateName: prefix + "-",
 					Namespace:    namespace,
@@ -39,7 +39,7 @@ var _ = Describe("Predicates", func() {
 					},
 					Annotations: map[string]string{},
 				},
-				Spec: tektonv1beta1.PipelineRunSpec{},
+				Spec: tektonv1.PipelineRunSpec{},
 			}
 			newPipelineRun = pipelineRun.DeepCopy()
 		})
@@ -77,7 +77,7 @@ var _ = Describe("Predicates", func() {
 
 			newPipelineRun.Annotations["chains.tekton.dev/signed"] = "true"
 			Expect(instance.Update(contextEvent)).To(BeTrue())
-			contextEvent.ObjectNew = &tektonv1beta1.TaskRun{}
+			contextEvent.ObjectNew = &tektonv1.TaskRun{}
 			Expect(instance.Update(contextEvent)).To(BeFalse())
 		})
 
@@ -137,7 +137,7 @@ var _ = Describe("Predicates", func() {
 
 		BeforeEach(func() {
 
-			pipelineRun = &tektonv1beta1.PipelineRun{
+			pipelineRun = &tektonv1.PipelineRun{
 				ObjectMeta: v1.ObjectMeta{
 					GenerateName: prefix + "-",
 					Namespace:    namespace,
@@ -145,7 +145,7 @@ var _ = Describe("Predicates", func() {
 						"pipelines.appstudio.openshift.io/type": "test",
 					},
 				},
-				Spec: tektonv1beta1.PipelineRunSpec{},
+				Spec: tektonv1.PipelineRunSpec{},
 			}
 			newPipelineRun = pipelineRun.DeepCopy()
 		})
@@ -182,7 +182,7 @@ var _ = Describe("Predicates", func() {
 				Status: "True",
 			})
 			Expect(instance.Update(contextEvent)).To(BeTrue())
-			contextEvent.ObjectNew = &tektonv1beta1.TaskRun{}
+			contextEvent.ObjectNew = &tektonv1.TaskRun{}
 			Expect(instance.Update(contextEvent)).To(BeFalse())
 		})
 
@@ -198,7 +198,7 @@ var _ = Describe("Predicates", func() {
 				Status: "False",
 			})
 			Expect(instance.Update(contextEvent)).To(BeTrue())
-			contextEvent.ObjectNew = &tektonv1beta1.TaskRun{}
+			contextEvent.ObjectNew = &tektonv1.TaskRun{}
 			Expect(instance.Update(contextEvent)).To(BeFalse())
 		})
 
@@ -210,7 +210,7 @@ var _ = Describe("Predicates", func() {
 			Expect(instance.Update(contextEvent)).To(BeFalse())
 			newPipelineRun.Status.StartTime = &v1.Time{Time: time.Now()}
 			Expect(instance.Update(contextEvent)).To(BeTrue())
-			contextEvent.ObjectNew = &tektonv1beta1.TaskRun{}
+			contextEvent.ObjectNew = &tektonv1.TaskRun{}
 			Expect(instance.Update(contextEvent)).To(BeFalse())
 		})
 	})

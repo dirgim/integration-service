@@ -22,7 +22,7 @@ import (
 	applicationapiv1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	"github.com/redhat-appstudio/integration-service/api/v1beta1"
 	releasev1alpha1 "github.com/redhat-appstudio/release-service/api/v1alpha1"
-	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -150,7 +150,7 @@ func (l *mockLoader) GetComponentFromSnapshot(c client.Client, ctx context.Conte
 }
 
 // GetComponentFromPipelineRun returns the resource and error passed as values of the context.
-func (l *mockLoader) GetComponentFromPipelineRun(c client.Client, ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) (*applicationapiv1alpha1.Component, error) {
+func (l *mockLoader) GetComponentFromPipelineRun(c client.Client, ctx context.Context, pipelineRun *tektonv1.PipelineRun) (*applicationapiv1alpha1.Component, error) {
 	if ctx.Value(ComponentContextKey) == nil {
 		return l.loader.GetComponentFromPipelineRun(c, ctx, pipelineRun)
 	}
@@ -158,7 +158,7 @@ func (l *mockLoader) GetComponentFromPipelineRun(c client.Client, ctx context.Co
 }
 
 // GetApplicationFromPipelineRun returns the resource and error passed as values of the context.
-func (l *mockLoader) GetApplicationFromPipelineRun(c client.Client, ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) (*applicationapiv1alpha1.Application, error) {
+func (l *mockLoader) GetApplicationFromPipelineRun(c client.Client, ctx context.Context, pipelineRun *tektonv1.PipelineRun) (*applicationapiv1alpha1.Application, error) {
 	if ctx.Value(ApplicationContextKey) == nil {
 		return l.loader.GetApplicationFromPipelineRun(c, ctx, pipelineRun)
 	}
@@ -174,7 +174,7 @@ func (l *mockLoader) GetApplicationFromComponent(c client.Client, ctx context.Co
 }
 
 // GetEnvironmentFromIntegrationPipelineRun returns the resource and error passed as values of the context.
-func (l *mockLoader) GetEnvironmentFromIntegrationPipelineRun(c client.Client, ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) (*applicationapiv1alpha1.Environment, error) {
+func (l *mockLoader) GetEnvironmentFromIntegrationPipelineRun(c client.Client, ctx context.Context, pipelineRun *tektonv1.PipelineRun) (*applicationapiv1alpha1.Environment, error) {
 	if ctx.Value(EnvironmentContextKey) == nil {
 		return l.loader.GetEnvironmentFromIntegrationPipelineRun(c, ctx, pipelineRun)
 	}
@@ -182,7 +182,7 @@ func (l *mockLoader) GetEnvironmentFromIntegrationPipelineRun(c client.Client, c
 }
 
 // GetSnapshotFromPipelineRun returns the resource and error passed as values of the context.
-func (l *mockLoader) GetSnapshotFromPipelineRun(c client.Client, ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) (*applicationapiv1alpha1.Snapshot, error) {
+func (l *mockLoader) GetSnapshotFromPipelineRun(c client.Client, ctx context.Context, pipelineRun *tektonv1.PipelineRun) (*applicationapiv1alpha1.Snapshot, error) {
 	if ctx.Value(SnapshotContextKey) == nil {
 		return l.loader.GetSnapshotFromPipelineRun(c, ctx, pipelineRun)
 	}
@@ -240,20 +240,20 @@ func (l *mockLoader) FindExistingSnapshotEnvironmentBinding(c client.Client, ctx
 }
 
 // GetAllPipelineRunsForSnapshotAndScenario returns the resource and error passed as values of the context.
-func (l *mockLoader) GetAllPipelineRunsForSnapshotAndScenario(c client.Client, ctx context.Context, snapshot *applicationapiv1alpha1.Snapshot, integrationTestScenario *v1beta1.IntegrationTestScenario) (*[]tektonv1beta1.PipelineRun, error) {
+func (l *mockLoader) GetAllPipelineRunsForSnapshotAndScenario(c client.Client, ctx context.Context, snapshot *applicationapiv1alpha1.Snapshot, integrationTestScenario *v1beta1.IntegrationTestScenario) (*[]tektonv1.PipelineRun, error) {
 	if ctx.Value(PipelineRunsContextKey) == nil {
 		return l.loader.GetAllPipelineRunsForSnapshotAndScenario(c, ctx, snapshot, integrationTestScenario)
 	}
-	pipelineRuns, err := getMockedResourceAndErrorFromContext(ctx, PipelineRunsContextKey, []tektonv1beta1.PipelineRun{})
+	pipelineRuns, err := getMockedResourceAndErrorFromContext(ctx, PipelineRunsContextKey, []tektonv1.PipelineRun{})
 	return &pipelineRuns, err
 }
 
 // GetAllBuildPipelineRunsForComponent returns the resource and error passed as values of the context.
-func (l *mockLoader) GetAllBuildPipelineRunsForComponent(c client.Client, ctx context.Context, component *applicationapiv1alpha1.Component) (*[]tektonv1beta1.PipelineRun, error) {
+func (l *mockLoader) GetAllBuildPipelineRunsForComponent(c client.Client, ctx context.Context, component *applicationapiv1alpha1.Component) (*[]tektonv1.PipelineRun, error) {
 	if ctx.Value(PipelineRunsContextKey) == nil {
 		return l.loader.GetAllBuildPipelineRunsForComponent(c, ctx, component)
 	}
-	pipelineRuns, err := getMockedResourceAndErrorFromContext(ctx, PipelineRunsContextKey, []tektonv1beta1.PipelineRun{})
+	pipelineRuns, err := getMockedResourceAndErrorFromContext(ctx, PipelineRunsContextKey, []tektonv1.PipelineRun{})
 	return &pipelineRuns, err
 }
 

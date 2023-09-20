@@ -30,14 +30,14 @@ import (
 	"github.com/redhat-appstudio/integration-service/tekton"
 	"github.com/redhat-appstudio/operator-toolkit/controller"
 	"github.com/redhat-appstudio/operator-toolkit/metadata"
-	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Adapter holds the objects needed to reconcile an integration PipelineRun.
 type Adapter struct {
-	pipelineRun *tektonv1beta1.PipelineRun
+	pipelineRun *tektonv1.PipelineRun
 	component   *applicationapiv1alpha1.Component
 	application *applicationapiv1alpha1.Application
 	loader      loader.ObjectLoader
@@ -48,7 +48,7 @@ type Adapter struct {
 }
 
 // NewAdapter creates and returns an Adapter instance.
-func NewAdapter(pipelineRun *tektonv1beta1.PipelineRun, component *applicationapiv1alpha1.Component, application *applicationapiv1alpha1.Application, logger h.IntegrationLogger, loader loader.ObjectLoader, client client.Client,
+func NewAdapter(pipelineRun *tektonv1.PipelineRun, component *applicationapiv1alpha1.Component, application *applicationapiv1alpha1.Application, logger h.IntegrationLogger, loader loader.ObjectLoader, client client.Client,
 	context context.Context) *Adapter {
 	return &Adapter{
 		pipelineRun: pipelineRun,
@@ -287,7 +287,7 @@ func (a *Adapter) getComponentSourceFromSnapshotComponent(snapshot *applicationa
 
 // determineIfAllIntegrationPipelinesPassed checks all Integration pipelines passed all of their test tasks.
 // Returns an error if it can't get the PipelineRun outcomes
-func (a *Adapter) determineIfAllIntegrationPipelinesPassed(integrationPipelineRuns *[]tektonv1beta1.PipelineRun) (bool, error) {
+func (a *Adapter) determineIfAllIntegrationPipelinesPassed(integrationPipelineRuns *[]tektonv1.PipelineRun) (bool, error) {
 	allIntegrationPipelineRunsPassed := true
 	for _, integrationPipelineRun := range *integrationPipelineRuns {
 		integrationPipelineRun := integrationPipelineRun // G601
@@ -337,8 +337,8 @@ func (a *Adapter) determineIfAllIntegrationPipelinesPassed(integrationPipelineRu
 // getAllPipelineRunsForSnapshot loads from the cluster all Integration PipelineRuns for each IntegrationTestScenario
 // associated with the Snapshot. If the Application doesn't have any IntegrationTestScenarios associated with it,
 // an error will be returned.
-func (a *Adapter) getAllPipelineRunsForSnapshot(snapshot *applicationapiv1alpha1.Snapshot, integrationTestScenarios *[]v1beta1.IntegrationTestScenario) (*[]tektonv1beta1.PipelineRun, error) {
-	var integrationPipelineRuns []tektonv1beta1.PipelineRun
+func (a *Adapter) getAllPipelineRunsForSnapshot(snapshot *applicationapiv1alpha1.Snapshot, integrationTestScenarios *[]v1beta1.IntegrationTestScenario) (*[]tektonv1.PipelineRun, error) {
+	var integrationPipelineRuns []tektonv1.PipelineRun
 	for _, integrationTestScenario := range *integrationTestScenarios {
 		integrationTestScenario := integrationTestScenario // G601
 		if a.pipelineRun.Labels[tekton.ScenarioNameLabel] != integrationTestScenario.Name {
@@ -435,7 +435,7 @@ func (a *Adapter) createCompositeSnapshotsIfConflictExists(application *applicat
 }
 
 // GetIntegrationPipelineRunStatus checks the Tekton results for a given PipelineRun and returns status of test.
-func GetIntegrationPipelineRunStatus(adapterClient client.Client, ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) (gitops.IntegrationTestStatus, string, error) {
+func GetIntegrationPipelineRunStatus(adapterClient client.Client, ctx context.Context, pipelineRun *tektonv1.PipelineRun) (gitops.IntegrationTestStatus, string, error) {
 	// Check if the pipelineRun finished from the condition of status
 	if !h.HasPipelineRunFinished(pipelineRun) {
 		return gitops.IntegrationTestStatusInProgress, fmt.Sprintf("Integration test is running as pipeline run '%s'", pipelineRun.Name), nil

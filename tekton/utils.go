@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/redhat-appstudio/operator-toolkit/metadata"
-	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"knative.dev/pkg/apis"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -32,7 +32,7 @@ const (
 // IsBuildPipelineRun returns a boolean indicating whether the object passed is a PipelineRun from
 // the Build service or not.
 func IsBuildPipelineRun(object client.Object) bool {
-	if pipelineRun, ok := object.(*tektonv1beta1.PipelineRun); ok {
+	if pipelineRun, ok := object.(*tektonv1.PipelineRun); ok {
 		return metadata.HasLabelWithValue(pipelineRun,
 			PipelineRunTypeLabel,
 			PipelineRunBuildType)
@@ -44,7 +44,7 @@ func IsBuildPipelineRun(object client.Object) bool {
 // IsIntegrationPipelineRun returns a boolean indicating whether the object passed is an Integration
 // Component PipelineRun
 func IsIntegrationPipelineRun(object client.Object) bool {
-	if pipelineRun, ok := object.(*tektonv1beta1.PipelineRun); ok {
+	if pipelineRun, ok := object.(*tektonv1.PipelineRun); ok {
 		return metadata.HasLabelWithValue(pipelineRun,
 			PipelineRunTypeLabel,
 			PipelineRunTestType)
@@ -56,8 +56,8 @@ func IsIntegrationPipelineRun(object client.Object) bool {
 // hasPipelineRunStateChangedToFinished returns a boolean indicating whether the PipelineRun status changed to finished or not.
 // If the objects passed to this function are not PipelineRuns, the function will return false.
 func hasPipelineRunStateChangedToFinished(objectOld, objectNew client.Object) bool {
-	if oldPipelineRun, ok := objectOld.(*tektonv1beta1.PipelineRun); ok {
-		if newPipelineRun, ok := objectNew.(*tektonv1beta1.PipelineRun); ok {
+	if oldPipelineRun, ok := objectOld.(*tektonv1.PipelineRun); ok {
+		if newPipelineRun, ok := objectNew.(*tektonv1.PipelineRun); ok {
 			return oldPipelineRun.Status.GetCondition(apis.ConditionSucceeded).IsUnknown() && !newPipelineRun.Status.GetCondition(apis.ConditionSucceeded).IsUnknown()
 		}
 	}
@@ -68,8 +68,8 @@ func hasPipelineRunStateChangedToFinished(objectOld, objectNew client.Object) bo
 // hasPipelineRunStateChangedToStarted returns a boolean indicating whether the PipelineRun just started.
 // If the objects passed to this function are not PipelineRuns, the function will return false.
 func hasPipelineRunStateChangedToStarted(objectOld, objectNew client.Object) bool {
-	if oldPipelineRun, ok := objectOld.(*tektonv1beta1.PipelineRun); ok {
-		if newPipelineRun, ok := objectNew.(*tektonv1beta1.PipelineRun); ok {
+	if oldPipelineRun, ok := objectOld.(*tektonv1.PipelineRun); ok {
+		if newPipelineRun, ok := objectNew.(*tektonv1.PipelineRun); ok {
 			return (oldPipelineRun.Status.StartTime == nil || oldPipelineRun.Status.StartTime.IsZero()) &&
 				(newPipelineRun.Status.StartTime != nil && !newPipelineRun.Status.StartTime.IsZero())
 		}
@@ -81,7 +81,7 @@ func hasPipelineRunStateChangedToStarted(objectOld, objectNew client.Object) boo
 // isPipelineRunSigned returns a boolean indicated whether the PipelineRun been signed
 // If the object passed to this function is not a PipelineRun, the function will return false.
 func isPipelineRunSigned(objectNew client.Object) bool {
-	if newPipelineRun, ok := objectNew.(*tektonv1beta1.PipelineRun); ok {
+	if newPipelineRun, ok := objectNew.(*tektonv1.PipelineRun); ok {
 		return metadata.HasAnnotationWithValue(newPipelineRun, PipelineRunChainsSignedAnnotation, "true")
 	}
 	return false
@@ -89,7 +89,7 @@ func isPipelineRunSigned(objectNew client.Object) bool {
 
 // GetTypeFromPipelineRun extracts the pipeline type from the pipelineRun labels.
 func GetTypeFromPipelineRun(object client.Object) (string, error) {
-	if pipelineRun, ok := object.(*tektonv1beta1.PipelineRun); ok {
+	if pipelineRun, ok := object.(*tektonv1.PipelineRun); ok {
 		if pipelineType, found := pipelineRun.Labels[PipelineRunTypeLabel]; found {
 			return pipelineType, nil
 		}
@@ -99,8 +99,8 @@ func GetTypeFromPipelineRun(object client.Object) (string, error) {
 
 // GetOutputImage returns a string containing the output-image parameter value from a given PipelineRun.
 func GetOutputImage(object client.Object) (string, error) {
-	if pipelineRun, ok := object.(*tektonv1beta1.PipelineRun); ok {
-		for _, pipelineResult := range pipelineRun.Status.PipelineResults {
+	if pipelineRun, ok := object.(*tektonv1.PipelineRun); ok {
+		for _, pipelineResult := range pipelineRun.Status.Results {
 			if pipelineResult.Name == "IMAGE_URL" {
 				return pipelineResult.Value.StringVal, nil
 			}
@@ -111,8 +111,8 @@ func GetOutputImage(object client.Object) (string, error) {
 
 // GetOutputImageDigest returns a string containing the IMAGE_DIGEST result value from a given PipelineRun.
 func GetOutputImageDigest(object client.Object) (string, error) {
-	if pipelineRun, ok := object.(*tektonv1beta1.PipelineRun); ok {
-		for _, pipelineResult := range pipelineRun.Status.PipelineResults {
+	if pipelineRun, ok := object.(*tektonv1.PipelineRun); ok {
+		for _, pipelineResult := range pipelineRun.Status.Results {
 			if pipelineResult.Name == "IMAGE_DIGEST" {
 				return pipelineResult.Value.StringVal, nil
 			}
@@ -123,8 +123,8 @@ func GetOutputImageDigest(object client.Object) (string, error) {
 
 // GetComponentSourceGitUrl returns a string containing the CHAINS-GIT_URL result value from a given PipelineRun.
 func GetComponentSourceGitUrl(object client.Object) (string, error) {
-	if pipelineRun, ok := object.(*tektonv1beta1.PipelineRun); ok {
-		for _, pipelineResult := range pipelineRun.Status.PipelineResults {
+	if pipelineRun, ok := object.(*tektonv1.PipelineRun); ok {
+		for _, pipelineResult := range pipelineRun.Status.Results {
 			if pipelineResult.Name == "CHAINS-GIT_URL" {
 				return pipelineResult.Value.StringVal, nil
 			}
@@ -135,8 +135,8 @@ func GetComponentSourceGitUrl(object client.Object) (string, error) {
 
 // GetComponentSourceGitCommit returns a string containing the CHAINS-GIT_COMMIT result value from a given PipelineRun.
 func GetComponentSourceGitCommit(object client.Object) (string, error) {
-	if pipelineRun, ok := object.(*tektonv1beta1.PipelineRun); ok {
-		for _, pipelineResult := range pipelineRun.Status.PipelineResults {
+	if pipelineRun, ok := object.(*tektonv1.PipelineRun); ok {
+		for _, pipelineResult := range pipelineRun.Status.Results {
 			if pipelineResult.Name == "CHAINS-GIT_COMMIT" {
 				return pipelineResult.Value.StringVal, nil
 			}

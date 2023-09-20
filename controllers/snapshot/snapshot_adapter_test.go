@@ -16,7 +16,7 @@ import (
 	"github.com/redhat-appstudio/integration-service/loader"
 	releasev1alpha1 "github.com/redhat-appstudio/release-service/api/v1alpha1"
 	releasemetadata "github.com/redhat-appstudio/release-service/metadata"
-	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -38,7 +38,7 @@ var _ = Describe("Snapshot Adapter", Ordered, func() {
 		hasSnapshot                       *applicationapiv1alpha1.Snapshot
 		hasSnapshotPR                     *applicationapiv1alpha1.Snapshot
 		deploymentTargetClass             *applicationapiv1alpha1.DeploymentTargetClass
-		integrationPipelineRun            *tektonv1beta1.PipelineRun
+		integrationPipelineRun            *tektonv1.PipelineRun
 		integrationTestScenario           *v1beta1.IntegrationTestScenario
 		integrationTestScenarioWithoutEnv *v1beta1.IntegrationTestScenario
 		env                               *applicationapiv1alpha1.Environment
@@ -270,7 +270,7 @@ var _ = Describe("Snapshot Adapter", Ordered, func() {
 		}
 		Expect(k8sClient.Create(ctx, hasSnapshotPR)).Should(Succeed())
 
-		integrationPipelineRun = &tektonv1beta1.PipelineRun{
+		integrationPipelineRun = &tektonv1.PipelineRun{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: "build-pipelinerun" + "-",
 				Namespace:    "default",
@@ -286,16 +286,26 @@ var _ = Describe("Snapshot Adapter", Ordered, func() {
 					"pipelinesascode.tekton.dev/installation-id":    "123",
 				},
 			},
-			Spec: tektonv1beta1.PipelineRunSpec{
-				PipelineRef: &tektonv1beta1.PipelineRef{
-					Name:   "build-pipeline-pass",
-					Bundle: "quay.io/kpavic/test-bundle:build-pipeline-pass",
+			Spec: tektonv1.PipelineRunSpec{
+				PipelineRef: &tektonv1.PipelineRef{
+					Name: "build-pipeline-pass",
+					ResolverRef: tektonv1.ResolverRef{
+						Resolver: "bundle",
+						Params: tektonv1.Params{
+							{Name: "bundle",
+								Value: tektonv1.ParamValue{Type: "string", StringVal: "quay.io/kpavic/test-bundle:build-pipeline-pass"},
+							},
+							{Name: "name",
+								Value: tektonv1.ParamValue{Type: "string", StringVal: "build-pipeline-pass"},
+							},
+						},
+					},
 				},
-				Params: []tektonv1beta1.Param{
+				Params: []tektonv1.Param{
 					{
 						Name: "output-image",
-						Value: tektonv1beta1.ParamValue{
-							Type:      tektonv1beta1.ParamTypeString,
+						Value: tektonv1.ParamValue{
+							Type:      tektonv1.ParamTypeString,
 							StringVal: "quay.io/redhat-appstudio/sample-image",
 						},
 					},
@@ -395,7 +405,7 @@ var _ = Describe("Snapshot Adapter", Ordered, func() {
 			_, err := adapter.createIntegrationPipelineRun(hasApp, integrationTestScenario, hasSnapshot)
 			Expect(err == nil).To(BeTrue())
 
-			integrationPipelineRuns := &tektonv1beta1.PipelineRunList{}
+			integrationPipelineRuns := &tektonv1.PipelineRunList{}
 			opts := []client.ListOption{
 				client.InNamespace(hasApp.Namespace),
 				client.MatchingLabels{
