@@ -354,8 +354,8 @@ func (a *Adapter) EnsureCreationOfEphemeralEnvironments() (controller.OperationR
 // EnsureGlobalCandidateImageUpdated is an operation that ensure the ContainerImage in the Global Candidate List
 // being updated when the Snapshot passed all the integration tests
 func (a *Adapter) EnsureGlobalCandidateImageUpdated() (controller.OperationResult, error) {
-	if a.component == nil || gitops.IsSnapshotCreatedByPACPullRequestEvent(a.snapshot) {
-		a.logger.Info("The Snapshot wasn't created for a single component push event, not updating the global candidate list.")
+	if gitops.IsSnapshotCreatedByPACPullRequestEvent(a.snapshot) {
+		a.logger.Info("The Snapshot wasn't created for a push event, not updating the global candidate list.")
 		return controller.ContinueProcessing()
 	}
 	if !gitops.HaveAppStudioTestsSucceeded(a.snapshot) {
@@ -367,33 +367,22 @@ func (a *Adapter) EnsureGlobalCandidateImageUpdated() (controller.OperationResul
 		return controller.ContinueProcessing()
 	}
 
-	for _, component := range a.snapshot.Spec.Components {
-		if component.Name == a.component.Name {
-			patch := client.MergeFrom(a.component.DeepCopy())
-			a.component.Spec.ContainerImage = component.ContainerImage
-			err := a.client.Patch(a.context, a.component, patch)
-			if err != nil {
-				a.logger.Error(err, "Failed to update .Spec.ContainerImage of Global Candidate for the Component",
-					"component.Name", a.component.Name)
-				return controller.RequeueWithError(err)
-			}
-			a.logger.LogAuditEvent("Updated .Spec.ContainerImage of Global Candidate for the Component",
-				a.component, h.LogActionUpdate,
-				"containerImage", component.ContainerImage)
-			if reflect.ValueOf(component.Source).IsValid() && component.Source.GitSource != nil && component.Source.GitSource.Revision != "" {
-				patch := client.MergeFrom(a.component.DeepCopy())
-				a.component.Status.LastBuiltCommit = component.Source.GitSource.Revision
-				err = a.client.Status().Patch(a.context, a.component, patch)
-				if err != nil {
-					a.logger.Error(err, "Failed to update .Status.LastBuiltCommit of Global Candidate for the Component",
-						"component.Name", a.component.Name)
-					return controller.RequeueWithError(err)
-				}
-				a.logger.LogAuditEvent("Updated .Status.LastBuiltCommit of Global Candidate for the Component",
-					a.component, h.LogActionUpdate,
-					"lastBuildCommit", a.component.Status.LastBuiltCommit)
-			}
-			break
+	if a.snapshot.ObjectMeta.Labels[gitops.SnapshotTypeLabel] == gitops.SnapshotOverrideType {
+		err := a.overrideEntireGCLWithSnapshot(a.application, a.snapshot)
+		if err != nil {
+			a.logger.Error(err, "Failed to update the entire Global Candidate List for the override Snapshot",
+				"snapshot.Name", a.snapshot.Name)
+			return controller.RequeueWithError(err)
+		}
+	} else {
+		if a.component == nil {
+			a.logger.Info("Cannot find the component for the Snapshot, can't update the GCL for it.")
+			return controller.ContinueProcessing()
+		}
+		err := a.updateSingleComponentGCLWithSnapshot(a.component, a.snapshot)
+		if err != nil {
+			a.logger.Error(err, "Failed to update the GCL for the single component")
+			return controller.RequeueWithError(err)
 		}
 	}
 
@@ -960,4 +949,97 @@ func (a *Adapter) HandlePipelineCreationError(err error, integrationTestScenario
 	}
 	a.logger.Error(err, "Failed to create pipelineRun for snapshot and scenario")
 	return controller.RequeueWithError(err)
+}
+
+// overrideEntireGCLWithSnapshot overrides the entire GCL for the given application with the components from the Snapshot
+func (a *Adapter) overrideEntireGCLWithSnapshot(application *applicationapiv1alpha1.Application, snapshot *applicationapiv1alpha1.Snapshot) error {
+	applicationComponents, err := a.loader.GetAllApplicationComponents(a.client, a.context, application)
+	if err != nil {
+		a.logger.Error(err, "failed to get all application components",
+			"application.Name", a.application.Name)
+		return err
+	}
+
+	// We first check if all application components are represented in the override Snapshot
+	for _, applicationComponent := range *applicationComponents {
+		snapshotComponent := a.findMatchingComponentFromSnapshot(&applicationComponent, snapshot)
+		if snapshotComponent == nil {
+			return fmt.Errorf("cannot find matching component in the list of Snapshot components, cannot override the Snapshot list")
+		}
+	}
+
+	// Then we loop through the application components and update them one by one
+	for _, applicationComponent := range *applicationComponents {
+		applicationComponent := &applicationComponent // G601
+		patch := client.MergeFrom(applicationComponent.DeepCopy())
+		snapshotComponent := a.findMatchingComponentFromSnapshot(applicationComponent, snapshot)
+		applicationComponent.Spec.ContainerImage = snapshotComponent.ContainerImage
+		err := a.client.Patch(a.context, applicationComponent, patch)
+		if err != nil {
+			a.logger.Error(err, "Failed to update .Spec.ContainerImage of Global Candidate for the Component",
+				"component.Name", applicationComponent.Name)
+			return err
+		}
+		a.logger.LogAuditEvent("Updated .Spec.ContainerImage of Global Candidate for the Component",
+			applicationComponent, h.LogActionUpdate,
+			"containerImage", snapshotComponent.ContainerImage)
+		if reflect.ValueOf(snapshotComponent.Source).IsValid() && snapshotComponent.Source.GitSource != nil && snapshotComponent.Source.GitSource.Revision != "" {
+			patch := client.MergeFrom(applicationComponent.DeepCopy())
+			applicationComponent.Status.LastBuiltCommit = snapshotComponent.Source.GitSource.Revision
+			err = a.client.Status().Patch(a.context, applicationComponent, patch)
+			if err != nil {
+				a.logger.Error(err, "Failed to update .Status.LastBuiltCommit of Global Candidate for the Component",
+					"component.Name", applicationComponent.Name)
+				return err
+			}
+			a.logger.LogAuditEvent("Updated .Status.LastBuiltCommit of Global Candidate for the Component",
+				applicationComponent, h.LogActionUpdate,
+				"lastBuildCommit", applicationComponent.Status.LastBuiltCommit)
+		}
+	}
+	return nil
+}
+
+// findMatchingComponentFromSnapshot finds a matching component from the Snapshot for a given component
+func (a *Adapter) findMatchingComponentFromSnapshot(component *applicationapiv1alpha1.Component, snapshot *applicationapiv1alpha1.Snapshot) *applicationapiv1alpha1.SnapshotComponent {
+	for _, snapshotComponent := range snapshot.Spec.Components {
+		if snapshotComponent.Name == component.Name {
+			return &snapshotComponent
+		}
+	}
+	return nil
+}
+
+// updateSingleComponentGCLWithSnapshot overrides the GCL for the given component with the component from the Snapshot
+func (a *Adapter) updateSingleComponentGCLWithSnapshot(component *applicationapiv1alpha1.Component, snapshot *applicationapiv1alpha1.Snapshot) error {
+	for _, snapshotComponent := range snapshot.Spec.Components {
+		if snapshotComponent.Name == component.Name {
+			patch := client.MergeFrom(component.DeepCopy())
+			component.Spec.ContainerImage = snapshotComponent.ContainerImage
+			err := a.client.Patch(a.context, component, patch)
+			if err != nil {
+				a.logger.Error(err, "Failed to update .Spec.ContainerImage of Global Candidate for the Component",
+					"component.Name", component.Name)
+				return err
+			}
+			a.logger.LogAuditEvent("Updated .Spec.ContainerImage of Global Candidate for the Component",
+				component, h.LogActionUpdate,
+				"containerImage", snapshotComponent.ContainerImage)
+			if reflect.ValueOf(snapshotComponent.Source).IsValid() && snapshotComponent.Source.GitSource != nil && snapshotComponent.Source.GitSource.Revision != "" {
+				patch := client.MergeFrom(component.DeepCopy())
+				component.Status.LastBuiltCommit = snapshotComponent.Source.GitSource.Revision
+				err = a.client.Status().Patch(a.context, component, patch)
+				if err != nil {
+					a.logger.Error(err, "Failed to update .Status.LastBuiltCommit of Global Candidate for the Component",
+						"component.Name", component.Name)
+					return err
+				}
+				a.logger.LogAuditEvent("Updated .Status.LastBuiltCommit of Global Candidate for the Component",
+					component, h.LogActionUpdate,
+					"lastBuildCommit", component.Status.LastBuiltCommit)
+			}
+			break
+		}
+	}
+	return nil
 }

@@ -78,6 +78,9 @@ const (
 	// SnapshotCompositeType is the type of Snapshot which was created for multiple components.
 	SnapshotCompositeType = "composite"
 
+	// SnapshotOverrideType is the type of Snapshot which was created for multiple components and will override the entire GCL.
+	SnapshotOverrideType = "override"
+
 	// PipelineAsCodeEventTypeLabel is the type of event which triggered the pipelinerun in build service
 	PipelineAsCodeEventTypeLabel = PipelinesAsCodePrefix + "/event-type"
 

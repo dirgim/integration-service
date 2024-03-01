@@ -123,12 +123,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	logger = logger.WithApp(*application)
 
 	var component *applicationapiv1alpha1.Component
-	err = retry.OnError(retry.DefaultRetry, func(_ error) bool { return true }, func() error {
-		component, err = loader.GetComponentFromSnapshot(r.Client, ctx, snapshot)
-		return err
-	})
-	if err != nil {
-		return helpers.HandleLoaderError(logger, err, "Component", "Snapshot")
+	if snapshot.ObjectMeta.Labels[gitops.SnapshotTypeLabel] != gitops.SnapshotOverrideType {
+		err = retry.OnError(retry.DefaultRetry, func(_ error) bool { return true }, func() error {
+			component, err = loader.GetComponentFromSnapshot(r.Client, ctx, snapshot)
+			return err
+		})
+		if err != nil {
+			return helpers.HandleLoaderError(logger, err, "Component", "Snapshot")
+		}
 	}
 
 	adapter := NewAdapter(snapshot, application, component, logger, loader, r.Client, ctx)
