@@ -141,6 +141,11 @@ func (t *TaskRun) GetStartTime() time.Time {
 	return t.trStatus.StartTime.Time
 }
 
+// GetStatusCondition returns the status condition of the TaskRun.
+func (t *TaskRun) GetStatusCondition(conditionName string) *apis.Condition {
+	return t.trStatus.GetCondition(apis.ConditionType(conditionName))
+}
+
 // GetDuration returns the time it took to execute the Task.
 // If the start or end times are unknown, a duration of 0 is returned.
 func (t *TaskRun) GetDuration() time.Duration {

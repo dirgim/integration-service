@@ -178,7 +178,17 @@ func FormatDetails(taskRun *helpers.TaskRun) (string, error) {
 	}
 
 	if result.TestOutput == nil {
-		return "", nil
+		var emoji string
+		taskSucceededReason := taskRun.GetStatusCondition("Succeeded").GetReason()
+		switch taskSucceededReason {
+		case "Succeeded":
+			emoji = ":heavy_check_mark:"
+		case "Failed":
+			emoji = ":x:"
+		default:
+			emoji = ":question:"
+		}
+		return fmt.Sprintf(emoji+" Reason: %s", taskSucceededReason), nil
 	}
 
 	details := []string{}
