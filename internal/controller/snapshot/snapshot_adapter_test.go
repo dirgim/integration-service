@@ -640,12 +640,14 @@ var _ = Describe("Snapshot Adapter", Ordered, func() {
 				sourceRepoUrl = "https://test-repo.example.com" // is without .git suffix
 				sourceRepoRef = "db2c043b72b3f8d292ee0e38768d0a94859a308b"
 				targetRepoUrl = "https://github.com/redhat-appstudio/integration-examples" // is without .git suffix
+				targetBranch  = "main"                                                     // is without .git suffix
 			)
 
 			BeforeEach(func() {
 				hasSnapshotPR.Annotations[gitops.SnapshotGitSourceRepoURLAnnotation] = sourceRepoUrl
 				hasSnapshotPR.Annotations[gitops.PipelineAsCodeSHAAnnotation] = sourceRepoRef
 				hasSnapshotPR.Annotations[gitops.PipelineAsCodeRepoURLAnnotation] = targetRepoUrl
+				hasSnapshotPR.Annotations[gitops.PipelineAsCodeBranchAnnotation] = targetBranch
 			})
 
 			It("pullrequest repo reference and URL should be used", func() {

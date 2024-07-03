@@ -116,6 +116,9 @@ const (
 	// PipelineAsCodePullRequestAnnotation is the git repository's pull request identifier
 	PipelineAsCodePullRequestAnnotation = PipelinesAsCodePrefix + "/pull-request"
 
+	// PipelineAsCodeBranchAnnotation is the target branch for's pull request identifier
+	PipelineAsCodeBranchAnnotation = PipelinesAsCodePrefix + "/branch"
+
 	// PipelineAsCodeSourceProjectIDAnnotation is the source project ID for gitlab
 	PipelineAsCodeSourceProjectIDAnnotation = PipelinesAsCodePrefix + "/source-project-id"
 

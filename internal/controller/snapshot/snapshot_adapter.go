@@ -508,7 +508,8 @@ func urlToGitUrl(url string) string {
 	return url + ".git"
 }
 
-// shouldUpdateIntegrationTestGitResolver checks if the integration test resolver should be updated based on the source repo
+// shouldUpdateIntegrationTestGitResolver checks if the integration test resolver should be updated based on the
+// source repo and target branch
 func shouldUpdateIntegrationTestGitResolver(integrationTestScenario *v1beta2.IntegrationTestScenario, snapshot *applicationapiv1alpha1.Snapshot) bool {
 
 	// only "pull-requests" are applicable
@@ -527,8 +528,12 @@ func shouldUpdateIntegrationTestGitResolver(integrationTestScenario *v1beta2.Int
 	params := resolverParamsToMap(testResolverRef.Params)
 
 	if urlVal, ok := params[tekton.TektonResolverGitParamURL]; ok {
-		// urlVal may or may not have git suffix specified :')
-		return urlToGitUrl(urlVal) == urlToGitUrl(annotations[gitops.PipelineAsCodeRepoURLAnnotation])
+		if targetRevision, found := params[tekton.TektonResolverGitParamRevision]; found {
+			// The urlVal may or may not have git suffix specified :')
+			// Both the git url and target branches have to match the integrationTestScenario resolver params
+			return urlToGitUrl(urlVal) == urlToGitUrl(annotations[gitops.PipelineAsCodeRepoURLAnnotation]) &&
+				targetRevision == annotations[gitops.PipelineAsCodeBranchAnnotation]
+		}
 	}
 
 	// undefined state, no idea what was configured in resolver, don't touch it
