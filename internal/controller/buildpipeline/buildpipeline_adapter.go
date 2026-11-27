@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/strings/slices"
 
+	konfluxv1alpha1 "github.com/konflux-ci/application-api/api/konflux/v1alpha1"
 	applicationapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	"github.com/konflux-ci/integration-service/api/konflux/v1beta2"
 	integrationv1beta2 "github.com/konflux-ci/integration-service/api/v1beta2"
@@ -51,6 +52,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	clienterrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -102,6 +105,343 @@ func NewAdapter(context context.Context, pipelineRun *tektonv1.PipelineRun, comp
 		context:         context,
 		status:          status.NewStatus(logger.Logger, client),
 	}
+}
+
+// EnsureBuildPriorityClass sets kueue.x-k8s.io/priority-class for a component build
+// from the namespace NudgeConfig and the Component CVE pull-request list (ADR 0075).
+// A nudge, a test, a release, and a MintMaker branch keep the class already on the PipelineRun.
+// New-model build PipelineRuns are skipped until that path is enabled.
+func (a *Adapter) EnsureBuildPriorityClass() (controller.OperationResult, error) {
+	if tekton.IsNewModelBuildPipelineRun(a.pipelineRun) || !a.pipelineRun.DeletionTimestamp.IsZero() || h.LeavesPriorityClass(a.pipelineRun) {
+		return controller.ContinueProcessing()
+	}
+	componentName := a.componentName
+	if componentName == "" {
+		componentName = h.ComponentNameFromPipelineRun(a.pipelineRun)
+	}
+	if componentName == "" {
+		return controller.ContinueProcessing()
+	}
+
+	row := h.BuildPriorityRowForEvent(
+		h.PipelineRunLabel(a.pipelineRun, tektonconsts.PipelineAsCodeEventTypeLabel),
+		h.PipelineRunAnnotation(a.pipelineRun, h.BuildEventAnnotation),
+	)
+	if row == h.BuildPriorityRowDefault {
+		if err := a.writePriorityClass(h.PriorityClassDefault, false, ""); err != nil {
+			return controller.RequeueWithError(err)
+		}
+		return controller.ContinueProcessing()
+	}
+
+	nudges, err := a.nudgesForPriority()
+	if err != nil {
+		return controller.RequeueWithError(err)
+	}
+	standing := h.BuildStandingForComponent(componentName, nudges)
+	standingClass := h.StandingPriorityClass(row, standing)
+
+	component, err := a.getComponentForPriority(componentName)
+	if err != nil {
+		if writeErr := a.writePriorityClass(standingClass, true, ""); writeErr != nil {
+			return controller.RequeueWithError(writeErr)
+		}
+		if clienterrors.IsNotFound(err) {
+			a.logger.Info("Component not found; left the CVE priority class unset", "component", componentName)
+			return controller.ContinueProcessing()
+		}
+		return controller.RequeueWithError(fmt.Errorf("get Component %s for build priority: %w", componentName, err))
+	}
+
+	subject, subjectMatched := h.SeverityFromCommitSubject(h.PipelineRunAnnotation(a.pipelineRun, tektonconsts.PipelineAsCodeSHATitleAnnotation))
+	decision, err := a.applyCVEDecision(component, row, subject, subjectMatched, h.PacPullRequest(a.pipelineRun), h.MatchedPullRequest(a.pipelineRun))
+	if err != nil {
+		if writeErr := a.writePriorityClass(standingClass, true, ""); writeErr != nil {
+			return controller.RequeueWithError(writeErr)
+		}
+		return controller.RequeueWithError(err)
+	}
+	class := standingClass
+	severity := ""
+	if decision.UseCVE {
+		class = h.CVEPriorityClass(row, standing, decision.Severity)
+		severity = string(decision.Severity)
+	}
+	if err := a.writePriorityClass(class, true, severity); err != nil {
+		return controller.RequeueWithError(err)
+	}
+	return controller.ContinueProcessing()
+}
+
+// priorityComponentGVKs prefers the konflux-ci.dev Component and falls back to appstudio.redhat.com.
+var priorityComponentGVKs = []schema.GroupVersionKind{
+	konfluxv1alpha1.GroupVersion.WithKind("Component"),
+	applicationapiv1alpha1.GroupVersion.WithKind("Component"),
+}
+
+func (a *Adapter) nudgesForPriority() ([]v1beta2.NudgeRelationship, error) {
+	nudgeConfig, err := a.loader.GetNudgeConfigForNamespace(a.context, a.client, a.pipelineRun.Namespace)
+	if clienterrors.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get NudgeConfig for build priority: %w", err)
+	}
+	return nudgeConfig.Spec.Nudges, nil
+}
+
+func (a *Adapter) getComponentForPriority(name string) (*unstructured.Unstructured, error) {
+	var forbidden error
+	for _, gvk := range priorityComponentGVKs {
+		component := &unstructured.Unstructured{}
+		component.SetGroupVersionKind(gvk)
+		err := a.client.Get(a.context, client.ObjectKey{Namespace: a.pipelineRun.Namespace, Name: name}, component)
+		if err == nil {
+			component.SetGroupVersionKind(gvk)
+			return component, nil
+		}
+		if clienterrors.IsNotFound(err) {
+			continue
+		}
+		if clienterrors.IsForbidden(err) {
+			forbidden = err
+			continue
+		}
+		return nil, err
+	}
+	if forbidden != nil {
+		return nil, forbidden
+	}
+	return nil, clienterrors.NewNotFound(schema.GroupResource{Group: konfluxv1alpha1.GroupVersion.Group, Resource: "components"}, name)
+}
+
+func (a *Adapter) applyCVEDecision(component *unstructured.Unstructured, row h.BuildPriorityRow, subject h.CVESeverity, subjectMatched bool, pacPR, matchedPR string) (h.CVEListDecision, error) {
+	var decision h.CVEListDecision
+	gvk := component.GroupVersionKind()
+	key := client.ObjectKeyFromObject(component)
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		fresh := &unstructured.Unstructured{}
+		fresh.SetGroupVersionKind(gvk)
+		if err := a.client.Get(a.context, key, fresh); err != nil {
+			return err
+		}
+		fresh.SetGroupVersionKind(gvk)
+		current, err := readCVELists(fresh)
+		if err != nil {
+			return err
+		}
+		decision = h.DecideCVERebuildLists(current, row, subject, subjectMatched, pacPR, matchedPR)
+		if current.Equal(decision.Lists) {
+			return nil
+		}
+		return a.writeCVELists(fresh, decision.Lists)
+	})
+	if err != nil {
+		return h.CVEListDecision{}, fmt.Errorf("update Component CVE rebuild pull requests: %w", err)
+	}
+	return decision, nil
+}
+
+func (a *Adapter) writeCVELists(component *unstructured.Unstructured, lists h.CVERebuildPullRequests) error {
+	gvk := component.GroupVersionKind()
+	component.SetGroupVersionKind(gvk)
+	originalKey := client.ObjectKeyFromObject(component)
+	annotationsBeforeStatus := cloneAnnotations(component.GetAnnotations())
+	if err := setCVEStatus(component, lists); err != nil {
+		return err
+	}
+	statusErr := a.client.Status().Update(a.context, component)
+	if statusErr != nil && clienterrors.IsConflict(statusErr) {
+		return statusErr
+	}
+	if statusErr != nil && !isStatusSchemaError(statusErr) {
+		return fmt.Errorf("update Component status.cveRebuildPullRequests: %w", statusErr)
+	}
+	component.SetGroupVersionKind(gvk)
+	// A status response that omits metadata must not become the base of an annotation patch.
+	if len(component.GetAnnotations()) == 0 && len(annotationsBeforeStatus) > 0 {
+		component.SetAnnotations(annotationsBeforeStatus)
+	}
+	if statusErr == nil && statusMatches(component, lists) {
+		return a.syncCVEAnnotation(component, h.CVERebuildPullRequests{})
+	}
+
+	target := component
+	if statusErr != nil {
+		target = &unstructured.Unstructured{}
+		target.SetGroupVersionKind(gvk)
+		if err := a.client.Get(a.context, originalKey, target); err != nil {
+			return err
+		}
+		target.SetGroupVersionKind(gvk)
+	}
+	a.logger.Info("Component status did not retain cveRebuildPullRequests; storing the list in an annotation")
+	return a.syncCVEAnnotation(target, lists)
+}
+
+func (a *Adapter) syncCVEAnnotation(component *unstructured.Unstructured, lists h.CVERebuildPullRequests) error {
+	base := component.DeepCopy()
+	annotations := component.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	} else {
+		copied := make(map[string]string, len(annotations))
+		for key, value := range annotations {
+			copied[key] = value
+		}
+		annotations = copied
+	}
+	if lists.Empty() {
+		if _, found := annotations[h.CVERebuildPullRequestsAnnotation]; !found {
+			return nil
+		}
+		delete(annotations, h.CVERebuildPullRequestsAnnotation)
+	} else {
+		raw, err := json.Marshal(lists.Normalized())
+		if err != nil {
+			return err
+		}
+		if annotations[h.CVERebuildPullRequestsAnnotation] == string(raw) {
+			return nil
+		}
+		annotations[h.CVERebuildPullRequestsAnnotation] = string(raw)
+	}
+	component.SetAnnotations(annotations)
+	if err := a.client.Patch(a.context, component, client.MergeFrom(base)); err != nil {
+		return fmt.Errorf("patch Component CVE rebuild pull request annotation: %w", err)
+	}
+	return nil
+}
+
+func (a *Adapter) writePriorityClass(class string, manageSeverity bool, severity string) error {
+	key := client.ObjectKeyFromObject(a.pipelineRun)
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		fresh := &tektonv1.PipelineRun{}
+		if err := a.client.Get(a.context, key, fresh); err != nil {
+			return err
+		}
+		if priorityAlreadySet(fresh, class, manageSeverity, severity) {
+			*a.pipelineRun = *fresh
+			return nil
+		}
+		base := fresh.DeepCopy()
+		if fresh.Labels == nil {
+			fresh.Labels = map[string]string{}
+		}
+		fresh.Labels[h.KueuePriorityClassLabel] = class
+		if manageSeverity {
+			if fresh.Annotations == nil {
+				fresh.Annotations = map[string]string{}
+			}
+			if severity == "" {
+				delete(fresh.Annotations, h.CVEMaxSeverityAnnotation)
+			} else {
+				fresh.Annotations[h.CVEMaxSeverityAnnotation] = severity
+			}
+		}
+		if err := a.client.Patch(a.context, fresh, client.MergeFrom(base)); err != nil {
+			return err
+		}
+		*a.pipelineRun = *fresh
+		a.logger.Info("Set build PipelineRun priority class", "priorityClass", class, "cveMaxSeverity", severity)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("set priority class on build PipelineRun %s/%s: %w", a.pipelineRun.Namespace, a.pipelineRun.Name, err)
+	}
+	return nil
+}
+
+func priorityAlreadySet(pipelineRun *tektonv1.PipelineRun, class string, manageSeverity bool, severity string) bool {
+	if h.PipelineRunLabel(pipelineRun, h.KueuePriorityClassLabel) != class {
+		return false
+	}
+	if !manageSeverity {
+		return true
+	}
+	return h.PipelineRunAnnotation(pipelineRun, h.CVEMaxSeverityAnnotation) == severity
+}
+
+func readCVELists(component *unstructured.Unstructured) (h.CVERebuildPullRequests, error) {
+	lists, found, err := statusCVELists(component)
+	if err != nil {
+		return h.CVERebuildPullRequests{}, err
+	}
+	if found {
+		return lists, nil
+	}
+	raw := component.GetAnnotations()[h.CVERebuildPullRequestsAnnotation]
+	if raw == "" {
+		return h.CVERebuildPullRequests{}, nil
+	}
+	var decoded h.CVERebuildPullRequests
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		return h.CVERebuildPullRequests{}, fmt.Errorf("parse %s: %w", h.CVERebuildPullRequestsAnnotation, err)
+	}
+	return decoded.Normalized(), nil
+}
+
+func statusCVELists(component *unstructured.Unstructured) (h.CVERebuildPullRequests, bool, error) {
+	raw, found, err := unstructured.NestedFieldNoCopy(component.Object, "status", h.CVERebuildPullRequestsStatusField)
+	if err != nil || !found || raw == nil {
+		return h.CVERebuildPullRequests{}, false, err
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return h.CVERebuildPullRequests{}, false, err
+	}
+	var lists h.CVERebuildPullRequests
+	if err := json.Unmarshal(encoded, &lists); err != nil {
+		return h.CVERebuildPullRequests{}, false, fmt.Errorf("parse status.cveRebuildPullRequests: %w", err)
+	}
+	return lists.Normalized(), true, nil
+}
+
+func statusMatches(component *unstructured.Unstructured, lists h.CVERebuildPullRequests) bool {
+	stored, found, err := statusCVELists(component)
+	if err != nil || !found {
+		return lists.Empty() && err == nil && !found
+	}
+	return stored.Equal(lists)
+}
+
+func setCVEStatus(component *unstructured.Unstructured, lists h.CVERebuildPullRequests) error {
+	status, found, err := unstructured.NestedMap(component.Object, "status")
+	if err != nil {
+		return err
+	}
+	if !found || status == nil {
+		status = map[string]any{}
+	}
+	if lists.Empty() {
+		delete(status, h.CVERebuildPullRequestsStatusField)
+	} else {
+		encoded, err := json.Marshal(lists.Normalized())
+		if err != nil {
+			return err
+		}
+		var asMap map[string]any
+		if err := json.Unmarshal(encoded, &asMap); err != nil {
+			return err
+		}
+		status[h.CVERebuildPullRequestsStatusField] = asMap
+	}
+	return unstructured.SetNestedMap(component.Object, status, "status")
+}
+
+func isStatusSchemaError(err error) bool {
+	return clienterrors.IsInvalid(err) || clienterrors.IsBadRequest(err)
+}
+
+func cloneAnnotations(annotations map[string]string) map[string]string {
+	if len(annotations) == 0 {
+		return nil
+	}
+	copied := make(map[string]string, len(annotations))
+	for key, value := range annotations {
+		copied[key] = value
+	}
+	return copied
 }
 
 // EnsureGlobalCandidateImageUpdated is an operation that ensure the ContainerImage in the Global Candidate List

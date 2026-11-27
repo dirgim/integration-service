@@ -115,6 +115,9 @@ const (
 	// PipelineAsCodeSourceBranchAnnotation is the branch name of the the pull request is created from
 	PipelineAsCodeSourceBranchAnnotation = "pipelinesascode.tekton.dev/source-branch"
 
+	// PipelineAsCodeSHATitleAnnotation is the commit subject Pipelines as Code copied onto the PipelineRun.
+	PipelineAsCodeSHATitleAnnotation = "pipelinesascode.tekton.dev/sha-title"
+
 	// PipelineAsCodeSourceRepoOrg is the repo org build PLR is triggered by
 	PipelineAsCodeSourceRepoOrg = "pipelinesascode.tekton.dev/url-org"
 

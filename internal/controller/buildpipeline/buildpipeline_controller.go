@@ -70,6 +70,8 @@ func NewIntegrationReconciler(client client.Client, logger *logr.Logger, scheme 
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list
 //+kubebuilder:rbac:groups=konflux-ci.dev,resources=components,verbs=get;list
+//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;patch;update
+//+kubebuilder:rbac:groups=konflux-ci.dev,resources=components/status,verbs=get;patch;update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -190,6 +192,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	return controller.ReconcileHandler([]controller.Operation{
+		adapter.EnsureBuildPriorityClass,
 		adapter.EnsurePipelineIsFinalized,
 		adapter.EnsurePRSnapshotAnnotatedForMergedPR,
 		adapter.EnsurePRGroupAnnotated,
@@ -205,6 +208,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 // AdapterInterface is an interface defining all the operations that should be defined in an Integration adapter.
 type AdapterInterface interface {
+	EnsureBuildPriorityClass() (controller.OperationResult, error)
 	EnsurePRSnapshotAnnotatedForMergedPR() (controller.OperationResult, error)
 	EnsurePipelineIsFinalized() (controller.OperationResult, error)
 	EnsurePRGroupAnnotated() (controller.OperationResult, error)

@@ -96,6 +96,7 @@ rules:
   - konflux-ci.dev
   resources:
   - componentgroups/status
+  - components/status
   - nudgeconfigs/status
   verbs:
   - get
