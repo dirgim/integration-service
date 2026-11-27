@@ -100,6 +100,12 @@ const (
 	// to stay equal to it.
 	ImageRepositoryComponentLabel = "appstudio.redhat.com/component"
 
+	// ComponentServiceAccountAnnotation opts an IntegrationTestScenario into running the integration
+	// PipelineRuns of a component Snapshot as its-pipeline-<component> (STONEINTG-1800). Only the value
+	// "true" enables it. The new-style key integration.konflux-ci.dev/component-service-account is read
+	// too. Absent, or any other value, the run keeps DefaultIntegrationPipelineServiceAccount.
+	ComponentServiceAccountAnnotation = "test.appstudio.openshift.io/component-service-account"
+
 	// ServiceAccountFallbackAnnotation is set on an integration PipelineRun for a component Snapshot that
 	// runs as DefaultIntegrationPipelineServiceAccount because its-pipeline-<component> could not be used
 	// (STONEINTG-1800). Its value is the reason. Such a run can test but cannot attest its result. It is

@@ -1218,7 +1218,8 @@ func (a *Adapter) createIntegrationPipelineRun(integrationTestScenario *v1beta2.
 		return nil, err
 	}
 
-	serviceAccountName, fallbackReason, err := a.selectPipelineServiceAccount(pipelineRunBuilder.Spec.TaskRunTemplate.ServiceAccountName)
+	definedServiceAccountName := pipelineRunBuilder.Spec.TaskRunTemplate.ServiceAccountName
+	serviceAccountName, fallbackReason, err := a.selectPipelineServiceAccount(integrationTestScenario, definedServiceAccountName)
 	if err != nil {
 		return nil, err
 	}
@@ -1231,9 +1232,11 @@ func (a *Adapter) createIntegrationPipelineRun(integrationTestScenario *v1beta2.
 		WithDefaultServiceAccount(serviceAccountName).
 		WithServiceAccountFallback(fallbackReason).
 		WithExtraParams(integrationTestScenario.Spec.Params).
-		WithComponentImage(a.snapshot, a.logger.Logger).
 		WithFinalizer(h.IntegrationPipelineRunFinalizer).
 		WithIntegrationTimeouts(integrationTestScenario, a.logger.Logger)
+	if a.shouldAddComponentImageParams(integrationTestScenario, definedServiceAccountName) {
+		pipelineRunBuilder = pipelineRunBuilder.WithComponentImage(a.snapshot, a.logger.Logger)
+	}
 
 	if shouldUpdateIntegrationGitResolver(integrationTestScenario, a.snapshot) {
 		a.logger.Info("use the integration test task/taskrun from the code in the pr of snapshot", "integrationTestScneario.Name", integrationTestScenario.Name)
@@ -1275,18 +1278,24 @@ func (a *Adapter) createIntegrationPipelineRun(integrationTestScenario *v1beta2.
 // selectPipelineServiceAccount returns the ServiceAccount that an integration PipelineRun for the
 // adapter's Snapshot runs as when its definition names none (STONEINTG-1800), and the reason when that
 // is a fallback. On a component Snapshot it is its-pipeline-<component>, with the component taken from
-// the Snapshot's component label. It falls back to the shared runner when that account does not exist
-// or lists no push secret of the component: a run on the account could then pull no private image and
-// could not attest. Every other Snapshot keeps the shared runner. definedServiceAccountName is the
-// ServiceAccount the PipelineRun definition of the scenario names; it always wins, and the push secret
-// is linked for it only when it is its-pipeline-<component>.
-func (a *Adapter) selectPipelineServiceAccount(definedServiceAccountName string) (string, string, error) {
+// the Snapshot's component label, when the scenario sets component-service-account to "true". It falls
+// back to the shared runner when that account does not exist or lists no push secret of the component:
+// a run on the account could then pull no private image and could not attest. A scenario that does not
+// opt in keeps the shared runner, and nothing is linked. Every other Snapshot keeps the shared runner.
+// definedServiceAccountName is the ServiceAccount the PipelineRun definition of the scenario names; it
+// always wins, and the push secret is linked for it only when it is its-pipeline-<component>, which
+// opts that run in on its own.
+func (a *Adapter) selectPipelineServiceAccount(scenario *v1beta2.IntegrationTestScenario, definedServiceAccountName string) (string, string, error) {
 	componentName, _ := keys.GetLabel(a.snapshot, keys.BuildComponent())
 	if !gitops.IsComponentSnapshot(a.snapshot) || componentName == "" {
 		return tektonconsts.DefaultIntegrationPipelineServiceAccount, "", nil
 	}
 	componentAccountName := h.ComponentIntegrationPipelineServiceAccountName(componentName)
+	// A name in the PipelineRun definition wins. Linking happens only for its-pipeline-<component>.
 	if definedServiceAccountName != "" && definedServiceAccountName != componentAccountName {
+		return tektonconsts.DefaultIntegrationPipelineServiceAccount, "", nil
+	}
+	if definedServiceAccountName != componentAccountName && !h.ScenarioUsesComponentServiceAccount(scenario) {
 		return tektonconsts.DefaultIntegrationPipelineServiceAccount, "", nil
 	}
 
@@ -1299,6 +1308,18 @@ func (a *Adapter) selectPipelineServiceAccount(definedServiceAccountName string)
 	}
 
 	return componentAccountName, "", nil
+}
+
+// shouldAddComponentImageParams reports whether the PipelineRun should carry image-url and image-digest.
+// Those params belong with the component service account: the scenario opted in, or its PipelineRun
+// definition names its-pipeline-<component>. WithComponentImage still adds nothing for a Snapshot
+// that is not a component Snapshot or that holds no image digest.
+func (a *Adapter) shouldAddComponentImageParams(scenario *v1beta2.IntegrationTestScenario, definedServiceAccountName string) bool {
+	if h.ScenarioUsesComponentServiceAccount(scenario) {
+		return true
+	}
+	componentName, found := keys.GetLabel(a.snapshot, keys.BuildComponent())
+	return found && definedServiceAccountName == h.ComponentIntegrationPipelineServiceAccountName(componentName)
 }
 
 // linkComponentPushSecret links the push secret of the component to its-pipeline-<component>

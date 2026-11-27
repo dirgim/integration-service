@@ -66,6 +66,9 @@ var _ = framework.IntegrationServiceSuiteDescribe("Integration Service E2E tests
 
 			integrationTestScenario, err = f.AsKubeAdmin.IntegrationController.CreateIntegrationTestScenario("", applicationName, testNamespace, gitURL, revision, pathInRepoPass, "", []string{"application"})
 			gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+			// Opt this scenario into its-pipeline-<component>. The skipped scenario stays on the shared runner.
+			metav1.SetMetaDataAnnotation(&integrationTestScenario.ObjectMeta, tektonconsts.ComponentServiceAccountAnnotation, "true")
+			gomega.Expect(f.AsKubeAdmin.IntegrationController.KubeRest().Update(context.Background(), integrationTestScenario)).To(gomega.Succeed())
 
 			skippedIntegrationTestScenario, err = f.AsKubeAdmin.IntegrationController.CreateIntegrationTestScenario("skipped-its", applicationName, testNamespace, gitURL, revision, pathInRepoPass, "", []string{"push"})
 			gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
